@@ -1,0 +1,73 @@
+name: saimo_tv
+description: "SAIMO TV - App de IPTV para Android TV"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Cache de imagens
+  cached_network_image: ^3.4.1
+  
+  # Player de vídeo
+  chewie: ^1.8.5
+  video_player: ^2.9.2
+  
+  # SVG
+  flutter_svg: ^2.0.10+1
+  
+  # HTML parsing
+  html: ^0.15.5
+  
+  # HTTP
+  http: ^1.2.2
+  
+  # Internacionalização
+  intl: ^0.20.2
+  
+  # Info do pacote
+  package_info_plus: ^9.0.0
+  
+  # Path provider
+  path_provider: ^2.1.5
+  
+  # State management
+  provider: ^6.1.5
+  
+  # Preferências
+  shared_preferences: ^2.3.3
+  
+  # Loading shimmer
+  shimmer: ^3.0.0
+  
+  # Database local
+  sqflite: ^2.4.0
+  
+  # Manter tela ligada
+  wakelock_plus: ^1.2.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.2
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icons/app_icon.png"
+  adaptive_icon_foreground: "assets/icons/ic_launcher_foreground.png"
+  adaptive_icon_background: "#1a1a2e"
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/icons/
+    - assets/images/
+    - json/
+    - json/enriched/

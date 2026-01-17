@@ -1,0 +1,1280 @@
+import '../models/channel.dart';
+import '../models/category.dart';
+
+/// Dados estáticos de canais de TV
+class ChannelsData {
+  // URLs base para logos
+  static const String _logoBrazil =
+      'https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/brazil';
+  static const String _logoIntl =
+      'https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/international';
+  static const String _logoUS =
+      'https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/united-states';
+  static const String _logoLAM =
+      'https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/world-latin-america';
+
+  // URL base dos streams
+  static const String _streamBase = 'https://canais.fazoeli.co.za/fontes/smart';
+
+  /// Gera logo fallback com iniciais
+  static String _getFallbackLogo(String name) {
+    final words = name.split(' ');
+    final initials = words.length >= 2 
+        ? '${words[0][0]}${words[1][0]}'
+        : name.substring(0, name.length >= 2 ? 2 : name.length);
+    return 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(initials.toUpperCase())}&background=8b5cf6&color=fff&size=128&bold=true&format=png';
+  }
+
+  /// Lista completa de canais
+  static List<Channel> getAllChannels({bool includeAdult = false}) {
+    final channels = _rawChannels
+        .where((ch) => includeAdult || !ch.isAdult)
+        .toList();
+    
+    // Ordena por categoria e depois por nome
+    channels.sort((a, b) {
+      final catIndexA = ChannelCategory.getIndex(a.category);
+      final catIndexB = ChannelCategory.getIndex(b.category);
+      
+      if (catIndexA != catIndexB) {
+        return catIndexA.compareTo(catIndexB);
+      }
+      return a.name.compareTo(b.name);
+    });
+
+    // Atribui números de canal
+    for (int i = 0; i < channels.length; i++) {
+      channels[i] = channels[i].copyWith(channelNumber: i + 1);
+    }
+
+    return channels;
+  }
+
+  /// Lista de canais por categoria
+  static Map<String, List<Channel>> getChannelsByCategory({bool includeAdult = false}) {
+    final channels = getAllChannels(includeAdult: includeAdult);
+    final Map<String, List<Channel>> grouped = {};
+
+    for (final channel in channels) {
+      grouped.putIfAbsent(channel.category, () => []).add(channel);
+    }
+
+    return grouped;
+  }
+
+  /// Lista bruta de canais - ATUALIZADA CONFORME DOCUMENTAÇÃO
+  static final List<Channel> _rawChannels = [
+    // ===== TV ABERTA =====
+    Channel(
+      id: 'globo-sp',
+      name: 'Globo SP',
+      url: '$_streamBase/globosp.m3u8',
+      logo: '$_logoBrazil/globo-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'globo-rj',
+      name: 'Globo RJ',
+      url: '$_streamBase/globorj.m3u8',
+      logo: '$_logoBrazil/globo-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'globo-mg',
+      name: 'Globo MG',
+      url: '$_streamBase/globomg.m3u8',
+      logo: '$_logoBrazil/globo-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'globo-rs',
+      name: 'Globo RS',
+      url: '$_streamBase/globors.m3u8',
+      logo: '$_logoBrazil/globo-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'globo-es',
+      name: 'Globo ES',
+      url: '$_streamBase/globoes.m3u8',
+      logo: '$_logoBrazil/globo-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'globo-am',
+      name: 'Globo AM',
+      url: '$_streamBase/globoam.m3u8',
+      logo: '$_logoBrazil/globo-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'sbt',
+      name: 'SBT',
+      url: '$_streamBase/sbt.m3u8',
+      logo: '$_logoBrazil/sbt-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'record',
+      name: 'Record TV',
+      url: '$_streamBase/record.m3u8',
+      logo: '$_logoBrazil/record-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'band',
+      name: 'Band',
+      url: '$_streamBase/band.m3u8',
+      logo: '$_logoBrazil/band-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'rede-tv',
+      name: 'RedeTV!',
+      url: '$_streamBase/redetv.m3u8',
+      logo: '$_logoBrazil/rede-tv-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'tv-brasil',
+      name: 'TV Brasil',
+      url: '$_streamBase/tvbrasil.m3u8',
+      logo: '$_logoBrazil/tv-brasil-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'cultura',
+      name: 'TV Cultura',
+      url: '$_streamBase/cultura.m3u8',
+      logo: '$_logoBrazil/tv-cultura-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'aparecida',
+      name: 'TV Aparecida',
+      url: '$_streamBase/aparecida.m3u8',
+      logo: '$_logoBrazil/tv-aparecida-br.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'tv-gazeta',
+      name: 'TV Gazeta',
+      url: '$_streamBase/tvgazeta.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3d/TV_Gazeta.svg/500px-TV_Gazeta.svg.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'impd',
+      name: 'IMPD',
+      url: 'https://68882bdaf156a.streamlock.net/impd/ngrp:impd_all/chunklist_w1366598577_b3715072.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/1/1c/Logotipo_da_Rede_Mundial.jpg',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'amazon-sat',
+      name: 'Amazon Sat',
+      url: 'https://amazonsat.brasilstream.com.br/hls/amazonsat/index.m3u8',
+      logo: 'https://i.imgur.com/7rjCS5i.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'sbt-interior',
+      name: 'SBT Interior',
+      url: 'https://cdn.jmvstream.com/w/LVW-10801/LVW10801_Xvg4R0u57n/playlist.m3u8',
+      logo: 'https://i.imgur.com/IkZfa4j.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'sertao-tv',
+      name: 'Sertão TV',
+      url: 'http://wz4.dnip.com.br/sertaotv/sertaotv.sdp/playlist.m3u8',
+      logo: 'https://i.imgur.com/b5xOCsC.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'cwb-tv',
+      name: 'CWB TV',
+      url: 'https://59d39900ebfb8.streamlock.net/cwbtv/cwbtv/playlist.m3u8',
+      logo: 'https://i.imgur.com/S0ISpmU.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'record-internacional',
+      name: 'Record Internacional',
+      url: 'https://viamotionhsi.netplus.ch/live/eds/rederecordinternacional/browser-HLS8/rederecordinternacional.m3u8',
+      logo: 'https://i.imgur.com/sz9gTTr.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'novo-tempo',
+      name: 'TV Novo Tempo',
+      url: 'https://stream.live.novotempo.com/tv/smil:tvnovotempo.smil/playlist.m3u8',
+      logo: 'https://i.postimg.cc/mgpGyqRg/novotempo.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'rede-gospel',
+      name: 'Rede Gospel',
+      url: 'https://redegospel-aovivo.nuvemplay.live/hls/stream.m3u8',
+      logo: 'https://i.imgur.com/mttSwgO.png',
+      category: ChannelCategory.tvAberta,
+    ),
+    Channel(
+      id: 'despertar-tv',
+      name: 'Despertar TV',
+      url: 'https://cdn.live.br1.jmvstream.com/webtv/pejexypz/playlist/playlist.m3u8',
+      logo: _getFallbackLogo('Despertar'),
+      category: ChannelCategory.tvAberta,
+    ),
+
+    // ===== FILMES =====
+    Channel(
+      id: 'telecine-action',
+      name: 'Telecine Action',
+      url: '$_streamBase/telecineaction.m3u8',
+      logo: '$_logoBrazil/tele-cine-action-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'telecine-premium',
+      name: 'Telecine Premium',
+      url: '$_streamBase/telecinepremium.m3u8',
+      logo: '$_logoBrazil/tele-cine-premium-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'telecine-pipoca',
+      name: 'Telecine Pipoca',
+      url: '$_streamBase/telecinepipoca.m3u8',
+      logo: '$_logoBrazil/tele-cine-pipoca-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'telecine-fun',
+      name: 'Telecine Fun',
+      url: '$_streamBase/telecinefun.m3u8',
+      logo: '$_logoBrazil/tele-cine-fun-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'telecine-touch',
+      name: 'Telecine Touch',
+      url: '$_streamBase/telecinetouch.m3u8',
+      logo: '$_logoBrazil/tele-cine-touch-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'telecine-cult',
+      name: 'Telecine Cult',
+      url: '$_streamBase/telecinecult.m3u8',
+      logo: '$_logoBrazil/tele-cine-cult-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'hbo',
+      name: 'HBO',
+      url: '$_streamBase/hbo.m3u8',
+      logo: '$_logoBrazil/hbo-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'hbo2',
+      name: 'HBO 2',
+      url: '$_streamBase/hbo2.m3u8',
+      logo: '$_logoBrazil/hbo-2-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'hbo-family',
+      name: 'HBO Family',
+      url: '$_streamBase/hbofamily.m3u8',
+      logo: '$_logoBrazil/hbo-family-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'hbo-mundi',
+      name: 'HBO Mundi',
+      url: '$_streamBase/hbomundi.m3u8',
+      logo: '$_logoBrazil/hbo-mundi-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'hbo-pop',
+      name: 'HBO Pop',
+      url: '$_streamBase/hbopop.m3u8',
+      logo: '$_logoBrazil/hbo-pop-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'hbo-xtreme',
+      name: 'HBO Xtreme',
+      url: '$_streamBase/hboxtreme.m3u8',
+      logo: '$_logoBrazil/hbo-xtreme-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'hbo-plus',
+      name: 'HBO Plus',
+      url: '$_streamBase/hboplus.m3u8',
+      logo: '$_logoBrazil/hbo-plus-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'tcm',
+      name: 'TCM',
+      url: '$_streamBase/tcm.m3u8',
+      logo: '$_logoBrazil/tcm-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'space',
+      name: 'Space',
+      url: '$_streamBase/space.m3u8',
+      logo: '$_logoBrazil/space-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'cinemax',
+      name: 'Cinemax',
+      url: '$_streamBase/cinemax.m3u8',
+      logo: '$_logoBrazil/cinemax-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'megapix',
+      name: 'Megapix',
+      url: '$_streamBase/megapix.m3u8',
+      logo: '$_logoBrazil/megapix-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'studio-universal',
+      name: 'Studio Universal',
+      url: '$_streamBase/studiouniversal.m3u8',
+      logo: '$_logoBrazil/studio-universal-br.png',
+      category: ChannelCategory.filmes,
+    ),
+    Channel(
+      id: 'curta',
+      name: 'Curta!',
+      url: '$_streamBase/curta.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Logo_of_Curta%21.svg/960px-Logo_of_Curta%21.svg.png',
+      category: ChannelCategory.filmes,
+    ),
+
+    // ===== SÉRIES =====
+    Channel(
+      id: 'warner',
+      name: 'Warner Channel',
+      url: '$_streamBase/warnerchannel.m3u8',
+      logo: '$_logoBrazil/warner-channel-br.png',
+      category: ChannelCategory.series,
+    ),
+    Channel(
+      id: 'tnt',
+      name: 'TNT',
+      url: '$_streamBase/tnt.m3u8',
+      logo: '$_logoBrazil/tnt-br.png',
+      category: ChannelCategory.series,
+    ),
+    Channel(
+      id: 'tnt-series',
+      name: 'TNT Series',
+      url: '$_streamBase/tntseries.m3u8',
+      logo: '$_logoBrazil/tnt-series-br.png',
+      category: ChannelCategory.series,
+    ),
+    Channel(
+      id: 'axn',
+      name: 'AXN',
+      url: '$_streamBase/axn.m3u8',
+      logo: '$_logoBrazil/axn-br.png',
+      category: ChannelCategory.series,
+    ),
+    Channel(
+      id: 'sony',
+      name: 'Sony Channel',
+      url: '$_streamBase/sonychannel.m3u8',
+      logo: '$_logoBrazil/sony-channel-br.png',
+      category: ChannelCategory.series,
+    ),
+    Channel(
+      id: 'universal-tv',
+      name: 'Universal TV',
+      url: '$_streamBase/universaltv.m3u8',
+      logo: '$_logoBrazil/universal-tv-br.png',
+      category: ChannelCategory.series,
+    ),
+    Channel(
+      id: 'ae',
+      name: 'A&E',
+      url: '$_streamBase/ae.m3u8',
+      logo: '$_logoBrazil/a-and-e-br.png',
+      category: ChannelCategory.series,
+    ),
+    Channel(
+      id: 'amc',
+      name: 'AMC',
+      url: '$_streamBase/amc.m3u8',
+      logo: '$_logoUS/amc-us.png',
+      category: ChannelCategory.series,
+    ),
+
+    // ===== ESPORTES =====
+    Channel(
+      id: 'sportv',
+      name: 'SporTV',
+      url: '$_streamBase/sportv.m3u8',
+      logo: '$_logoBrazil/sportv-br.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'sportv2',
+      name: 'SporTV 2',
+      url: '$_streamBase/sportv2.m3u8',
+      logo: '$_logoBrazil/sportv2-br.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'sportv3',
+      name: 'SporTV 3',
+      url: '$_streamBase/sportv3.m3u8',
+      logo: '$_logoBrazil/sportv3-br.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'sportv4',
+      name: 'SporTV 4',
+      url: '$_streamBase/sportv4.m3u8',
+      logo: '$_logoBrazil/sportv4-br.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'espn',
+      name: 'ESPN',
+      url: '$_streamBase/espn.m3u8',
+      logo: '$_logoIntl/espn-int.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'espn2',
+      name: 'ESPN 2',
+      url: '$_streamBase/espn2.m3u8',
+      logo: '$_logoLAM/espn-2-lam.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'espn3',
+      name: 'ESPN 3',
+      url: '$_streamBase/espn3.m3u8',
+      logo: '$_logoLAM/espn-3-lam.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'espn4',
+      name: 'ESPN 4',
+      url: '$_streamBase/espn4.m3u8',
+      logo: '$_logoBrazil/espn-4-br.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'espn5',
+      name: 'ESPN 5',
+      url: '$_streamBase/espn5.m3u8',
+      logo: '$_logoIntl/espn-int.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'premiere',
+      name: 'Premiere',
+      url: '$_streamBase/premiere.m3u8',
+      logo: '$_logoBrazil/premiere-br.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'premiere2',
+      name: 'Premiere 2',
+      url: '$_streamBase/premiere2.m3u8',
+      logo: '$_logoBrazil/premiere-br.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'premiere3',
+      name: 'Premiere 3',
+      url: '$_streamBase/premiere3.m3u8',
+      logo: '$_logoBrazil/premiere-br.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'premiere4',
+      name: 'Premiere 4',
+      url: '$_streamBase/premiere4.m3u8',
+      logo: '$_logoBrazil/premiere-br.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'combate',
+      name: 'Combate',
+      url: '$_streamBase/combate.m3u8',
+      logo: '$_logoUS/ufc-us.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'band-sports',
+      name: 'Band Sports',
+      url: '$_streamBase/bandsports.m3u8',
+      logo: '$_logoBrazil/band-sports-br.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'fifa-plus',
+      name: 'FIFA+ Português',
+      url: 'https://e3be9ac5.wurl.com/master/f36d25e7e52f1ba8d7e56eb859c636563214f541/TEctYnJfRklGQVBsdXNQb3J0dWd1ZXNlX0hMUw/playlist.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/FIFA%2B_(2025).svg/700px-FIFA%2B_(2025).svg.png',
+      category: ChannelCategory.esportes,
+    ),
+    Channel(
+      id: 'canal-do-inter',
+      name: 'Canal do Inter',
+      url: 'https://video01.soultv.com.br/internacional/internacional/playlist.m3u8',
+      logo: 'https://i.imgur.com/TQFWEIS.png',
+      category: ChannelCategory.esportes,
+    ),
+
+    // ===== NOTÍCIAS =====
+    Channel(
+      id: 'globo-news',
+      name: 'Globo News',
+      url: '$_streamBase/globonews.m3u8',
+      logo: '$_logoBrazil/globo-news-br.png',
+      category: ChannelCategory.noticias,
+    ),
+    Channel(
+      id: 'cnn-brasil',
+      name: 'CNN Brasil',
+      url: '$_streamBase/cnnbrasil.m3u8',
+      logo: '$_logoBrazil/cnn-brasil-br.png',
+      category: ChannelCategory.noticias,
+    ),
+    Channel(
+      id: 'band-news',
+      name: 'Band News',
+      url: '$_streamBase/bandnews.m3u8',
+      logo: '$_logoBrazil/band-news-br.png',
+      category: ChannelCategory.noticias,
+    ),
+    Channel(
+      id: 'record-news',
+      name: 'Record News',
+      url: '$_streamBase/recordnews.m3u8',
+      logo: '$_logoBrazil/record-news-br.png',
+      category: ChannelCategory.noticias,
+    ),
+    Channel(
+      id: 'jovem-pan-news',
+      name: 'Jovem Pan News',
+      url: 'https://d6yfbj4xxtrod.cloudfront.net/out/v1/7836eb391ec24452b149f3dc6df15bbd/index.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Jovem_Pan_logo_2018.svg/512px-Jovem_Pan_logo_2018.svg.png',
+      category: ChannelCategory.noticias,
+    ),
+    Channel(
+      id: 'stz-tv',
+      name: 'STZ TV',
+      url: 'https://cdn.live.br1.jmvstream.com/webtv/AVJ-12952/playlist/playlist.m3u8',
+      logo: 'https://i.imgur.com/SeF2I7q.png',
+      category: ChannelCategory.noticias,
+    ),
+
+    // ===== INFANTIL =====
+    Channel(
+      id: 'gloob',
+      name: 'Gloob',
+      url: '$_streamBase/gloob.m3u8',
+      logo: '$_logoBrazil/gloob-br.png',
+      category: ChannelCategory.infantil,
+    ),
+    Channel(
+      id: 'gloobinho',
+      name: 'Gloobinho',
+      url: '$_streamBase/gloobinho.m3u8',
+      logo: '$_logoBrazil/gloobinho-br.png',
+      category: ChannelCategory.infantil,
+    ),
+    Channel(
+      id: 'cartoon-network',
+      name: 'Cartoon Network',
+      url: '$_streamBase/cartoonnetwork.m3u8',
+      logo: '$_logoBrazil/cartoon-network-br.png',
+      category: ChannelCategory.infantil,
+    ),
+    Channel(
+      id: 'cartoonito',
+      name: 'Cartoonito',
+      url: '$_streamBase/cartoonito.m3u8',
+      logo: '$_logoBrazil/cartoonito-br.png',
+      category: ChannelCategory.infantil,
+    ),
+    Channel(
+      id: 'discovery-kids',
+      name: 'Discovery Kids',
+      url: '$_streamBase/discoverykids.m3u8',
+      logo: '$_logoBrazil/discovery-kids-br.png',
+      category: ChannelCategory.infantil,
+    ),
+    Channel(
+      id: 'nickelodeon',
+      name: 'Nickelodeon',
+      url: '$_streamBase/nickelodeon.m3u8',
+      logo: '$_logoLAM/nickelodeon-lam.png',
+      category: ChannelCategory.infantil,
+    ),
+    Channel(
+      id: 'adult-swim',
+      name: 'Adult Swim',
+      url: '$_streamBase/adultswim.m3u8',
+      logo: '$_logoUS/adult-swim-us.png',
+      category: ChannelCategory.infantil,
+    ),
+    Channel(
+      id: '24h-simpsons',
+      name: '24h Simpsons',
+      url: '$_streamBase/24h_simpsons.m3u8',
+      logo: 'asset:assets/icons/simpsons24h.png',
+      category: ChannelCategory.infantil,
+    ),
+    Channel(
+      id: '24h-dragonball',
+      name: '24h Dragon Ball',
+      url: '$_streamBase/24h_dragonball.m3u8',
+      logo: 'asset:assets/icons/dragomball24h.png',
+      category: ChannelCategory.infantil,
+    ),
+    Channel(
+      id: '24h-odeia-chris',
+      name: '24h Todo Mundo Odeia o Chris',
+      url: '$_streamBase/24h_odeiachris.m3u8',
+      logo: 'asset:assets/icons/todomundoodeiaochris.webp',
+      category: ChannelCategory.infantil,
+    ),
+    Channel(
+      id: 'gospel-cartoon',
+      name: 'Gospel Cartoon',
+      url: 'https://stmv1.srvif.com/gospelcartoon/gospelcartoon/playlist.m3u8',
+      logo: 'https://i.imgur.com/yxjPno5.png',
+      category: ChannelCategory.infantil,
+    ),
+    Channel(
+      id: 'geekdot',
+      name: 'Geekdot',
+      url: 'https://stream.ichibantv.com:3764/hybrid/play.m3u8',
+      logo: 'https://i.imgur.com/jML1u4O.png',
+      category: ChannelCategory.infantil,
+    ),
+
+    // ===== DOCUMENTÁRIOS =====
+    Channel(
+      id: 'discovery',
+      name: 'Discovery Channel',
+      url: '$_streamBase/discoverychannel.m3u8',
+      logo: '$_logoUS/discovery-channel-us.png',
+      category: ChannelCategory.documentarios,
+    ),
+    Channel(
+      id: 'discovery-turbo',
+      name: 'Discovery Turbo',
+      url: '$_streamBase/discoveryturbo.m3u8',
+      logo: '$_logoBrazil/discovery-turbo-br.png',
+      category: ChannelCategory.documentarios,
+    ),
+    Channel(
+      id: 'animal-planet',
+      name: 'Animal Planet',
+      url: '$_streamBase/animalplanet.m3u8',
+      logo: '$_logoIntl/animal-planet-int.png',
+      category: ChannelCategory.documentarios,
+    ),
+    Channel(
+      id: 'history',
+      name: 'History',
+      url: '$_streamBase/history.m3u8',
+      logo: '$_logoLAM/history-channel-lam.png',
+      category: ChannelCategory.documentarios,
+    ),
+    Channel(
+      id: 'history2',
+      name: 'History 2',
+      url: '$_streamBase/history2.m3u8',
+      logo: '$_logoLAM/history-channel-2-lam.png',
+      category: ChannelCategory.documentarios,
+    ),
+    Channel(
+      id: 'discovery-world',
+      name: 'Discovery World',
+      url: '$_streamBase/discoveryworld.m3u8',
+      logo: '$_logoUS/discovery-history-us.png',
+      category: ChannelCategory.documentarios,
+    ),
+    Channel(
+      id: 'food-network',
+      name: 'Food Network',
+      url: '$_streamBase/foodnetwork.m3u8',
+      logo: '$_logoUS/food-network-us.png',
+      category: ChannelCategory.documentarios,
+    ),
+    Channel(
+      id: 'tlc',
+      name: 'TLC',
+      url: '$_streamBase/tlc.m3u8',
+      logo: '$_logoIntl/tlc-int.png',
+      category: ChannelCategory.documentarios,
+    ),
+    Channel(
+      id: 'discovery-science',
+      name: 'Discovery Science',
+      url: '$_streamBase/discoveryscience.m3u8',
+      logo: '$_logoUS/discovery-science-us.png',
+      category: ChannelCategory.documentarios,
+    ),
+    Channel(
+      id: 'hgtv',
+      name: 'HGTV',
+      url: '$_streamBase/hgtv.m3u8',
+      logo: '$_logoUS/hgtv-us.png',
+      category: ChannelCategory.documentarios,
+    ),
+    Channel(
+      id: 'discovery-hh',
+      name: 'Discovery H&H',
+      url: '$_streamBase/discoveryhh.m3u8',
+      logo: '$_logoLAM/discovery-home-and-health-lam.png',
+      category: ChannelCategory.documentarios,
+    ),
+    Channel(
+      id: 'discovery-id',
+      name: 'Investigation Discovery',
+      url: '$_streamBase/discoveryid.m3u8',
+      logo: '$_logoIntl/investigation-discovery-int.png',
+      category: ChannelCategory.documentarios,
+    ),
+
+    // ===== ENTRETENIMENTO =====
+    Channel(
+      id: 'multishow',
+      name: 'Multishow',
+      url: '$_streamBase/multishow.m3u8',
+      logo: '$_logoBrazil/multishow-br.png',
+      category: ChannelCategory.entretenimento,
+    ),
+    Channel(
+      id: 'bis',
+      name: 'BIS',
+      url: '$_streamBase/bis.m3u8',
+      logo: '$_logoBrazil/bis-br.png',
+      category: ChannelCategory.entretenimento,
+    ),
+    Channel(
+      id: 'viva',
+      name: 'Viva',
+      url: '$_streamBase/viva.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Canal_Viva_2018_wordmark.svg/960px-Canal_Viva_2018_wordmark.svg.png',
+      category: ChannelCategory.entretenimento,
+    ),
+    Channel(
+      id: 'off',
+      name: 'OFF',
+      url: '$_streamBase/off.m3u8',
+      logo: '$_logoBrazil/canal-off-br.png',
+      category: ChannelCategory.entretenimento,
+    ),
+    Channel(
+      id: 'gnt',
+      name: 'GNT',
+      url: '$_streamBase/gnt.m3u8',
+      logo: '$_logoBrazil/gnt-br.png',
+      category: ChannelCategory.entretenimento,
+    ),
+    Channel(
+      id: 'arte1',
+      name: 'Arte 1',
+      url: '$_streamBase/arte1.m3u8',
+      logo: '$_logoBrazil/arte1-br.png',
+      category: ChannelCategory.entretenimento,
+    ),
+    Channel(
+      id: 'loading-tv',
+      name: 'Loading',
+      url: 'https://stmv1.srvif.com/loadingtv/loadingtv/playlist.m3u8',
+      logo: 'https://i.imgur.com/R0aflu1.png',
+      category: ChannelCategory.entretenimento,
+    ),
+    Channel(
+      id: 'revry-brasil',
+      name: 'Revry Brasil',
+      url: 'https://linear-181.frequency.stream/dist/24i/181/hls/master/playlist.m3u8',
+      logo: _getFallbackLogo('Revry'),
+      category: ChannelCategory.entretenimento,
+    ),
+    Channel(
+      id: 'mytime-movie',
+      name: 'MyTime Movie',
+      url: 'https://appletree-mytime-samsungbrazil.amagi.tv/playlist.m3u8',
+      logo: 'https://i.imgur.com/aiGQtzI.png',
+      category: ChannelCategory.entretenimento,
+    ),
+    Channel(
+      id: 'classique-tv',
+      name: 'Classique TV',
+      url: 'https://stmv1.srvif.com/classique/classique/playlist.m3u8',
+      logo: 'https://i.imgur.com/rHxcraT.png',
+      category: ChannelCategory.entretenimento,
+    ),
+    Channel(
+      id: 'gospel-movie-tv',
+      name: 'Gospel Movie TV',
+      url: 'https://stmv1.srvif.com/gospelf/gospelf/playlist.m3u8',
+      logo: 'https://i.imgur.com/cQN3nWt.png',
+      category: ChannelCategory.entretenimento,
+    ),
+
+    // ===== INTERNACIONAIS =====
+    Channel(
+      id: 'al-jazeera',
+      name: 'Al Jazeera English',
+      url: 'https://live-hls-apps-aje-fa.getaj.net/AJE/index.m3u8',
+      logo: 'https://i.imgur.com/7bRVpnu.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'dw-english',
+      name: 'DW English',
+      url: 'https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/master.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/DW_-_English.svg/512px-DW_-_English.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'rt-documentary',
+      name: 'RT Documentary',
+      url: 'https://rt-rtd.rttv.com/dvr/rtdoc/playlist.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/a/a0/RT_logo.svg',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'euronews',
+      name: 'Euronews English',
+      url: 'https://a-cdn.klowdtv.com/live3/euronews_720p/playlist.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/60/Euronews_2022.svg/512px-Euronews_2022.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'cgtn',
+      name: 'CGTN',
+      url: 'https://mn-nl.mncdn.com/dogusdyg_drone/cgtn/playlist.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/CGTN.svg/512px-CGTN.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'abc-news',
+      name: 'ABC News',
+      url: 'https://abc-news-dmd-streams-1.akamaized.net/out/v1/701126012d044971b3fa89406a440133/index.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/ABC_News_Live_logo_2021.svg/512px-ABC_News_Live_logo_2021.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'cbs-news',
+      name: 'CBS News New York',
+      url: 'https://cbsn-ny.cbsnstream.cbsnews.com/out/v1/ec3897d58a9b45129a77d67aa247d136/master.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/CBS_News.svg/512px-CBS_News.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'bloomberg',
+      name: 'Bloomberg',
+      url: 'https://www.bloomberg.com/media-manifest/streams/originals-global.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5d/New_Bloomberg_Logo.svg/512px-New_Bloomberg_Logo.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'accuweather',
+      name: 'AccuWeather',
+      url: 'https://cdn-ue1-prod.tsv2.amagi.tv/linear/amg00684-accuweather-accuweather-plex/playlist.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/AccuWeather_Logo.svg/512px-AccuWeather_Logo.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'red-bull-tv',
+      name: 'Red Bull TV',
+      url: 'https://769a97d9.wurl.com/master/f36d25e7e52f1ba8d7e56eb859c636563214f541/UmFrdXRlblRWLWV1X1JlZEJ1bGxUVl9ITFM/playlist.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/fc/RedBullTV_logo.svg/512px-RedBullTV_logo.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'nat-geo-int',
+      name: 'National Geographic',
+      url: 'https://fl1.moveonjoy.com/National_Geographic/index.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/fc/Natgeo.svg/512px-Natgeo.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'nat-geo-wild-int',
+      name: 'Nat Geo Wild',
+      url: 'https://fl1.moveonjoy.com/Nat_Geo_Wild/index.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/Nat_Geo_Wild_logo.svg/512px-Nat_Geo_Wild_logo.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'dazn-combat',
+      name: 'DAZN Combat',
+      url: 'https://dazn-combat-rakuten.amagi.tv/hls/amagi_hls_data_rakutenAA-dazn-combat-rakuten/CDN/master.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/DAZN_logo.svg/512px-DAZN_logo.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'fox-sports-int',
+      name: 'Fox Sports',
+      url: 'https://fl1.moveonjoy.com/FOX_Sports_1/index.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Fox_Sports_logo.svg/512px-Fox_Sports_logo.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'amc-int',
+      name: 'AMC',
+      url: 'https://fl1.moveonjoy.com/AMC_NETWORK/index.m3u8',
+      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/AMC_logo_2019.svg/512px-AMC_logo_2019.svg.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'lifetime-movies',
+      name: 'Lifetime Movies',
+      url: 'https://fl1.moveonjoy.com/LIFETIME_MOVIE_NETWORK/index.m3u8',
+      logo: _getFallbackLogo('Lifetime'),
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'epix',
+      name: 'Epix',
+      url: 'https://fl1.moveonjoy.com/EPIX/index.m3u8',
+      logo: _getFallbackLogo('Epix'),
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: '4k-travel',
+      name: '4K Travel TV',
+      url: 'https://streams2.sofast.tv/sofastplayout/33c31ac4-51fa-46ae-afd0-0d1fe5e60a80_0_HLS/master.m3u8',
+      logo: _getFallbackLogo('4K Travel'),
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'destination-tv',
+      name: 'Destination TV',
+      url: 'http://media4.tripsmarter.com:1935/LiveTV/DTVHD/playlist.m3u8',
+      logo: _getFallbackLogo('Destination'),
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'movie-channel',
+      name: 'The Movie Channel',
+      url: 'https://streams2.sofast.tv/sofastplayout/32eb332e-f644-46e5-ad91-e55ad80d14f7_0_HLS/master.m3u8',
+      logo: _getFallbackLogo('Movie'),
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'kuriakos-kids',
+      name: 'Kuriakos Kids',
+      url: 'https://w2.manasat.com/kkids/smil:kkids.smil/playlist.m3u8',
+      logo: 'https://i.imgur.com/SRX6EPY.png',
+      category: ChannelCategory.internacionais,
+    ),
+    Channel(
+      id: 'angel-tv',
+      name: 'Angel TV',
+      url: 'https://janya-digimix.akamaized.net/vglive-sk-382409/portuese/ngrp:angelportuguese_all/playlist.m3u8',
+      logo: 'https://i.imgur.com/qKLEGU7.png',
+      category: ChannelCategory.internacionais,
+    ),
+
+    // ===== ADULTO (Secreto) =====
+    Channel(
+      id: 'playboy',
+      name: 'Playboy TV',
+      url: '$_streamBase/playboy.m3u8',
+      logo: _getFallbackLogo('Playboy'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'sexy-hot',
+      name: 'Sexy Hot',
+      url: '$_streamBase/sexyhot.m3u8',
+      logo: _getFallbackLogo('Sexy Hot'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    // AdultIPTV.net CDN
+    Channel(
+      id: 'adult-anal-cdn',
+      name: 'Anal',
+      url: 'https://cdn.adultiptv.net/anal.m3u8',
+      logo: _getFallbackLogo('Anal'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-asian-cdn',
+      name: 'Asian',
+      url: 'https://cdn.adultiptv.net/asian.m3u8',
+      logo: _getFallbackLogo('Asian'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-bigass',
+      name: 'Big Ass',
+      url: 'https://cdn.adultiptv.net/bigass.m3u8',
+      logo: _getFallbackLogo('BigAss'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-bigdick',
+      name: 'Big Dick',
+      url: 'https://cdn.adultiptv.net/bigdick.m3u8',
+      logo: _getFallbackLogo('BigDick'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-bigtits',
+      name: 'Big Tits',
+      url: 'https://cdn.adultiptv.net/bigtits.m3u8',
+      logo: _getFallbackLogo('BigTits'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-blowjob',
+      name: 'Blowjob',
+      url: 'https://cdn.adultiptv.net/blowjob.m3u8',
+      logo: _getFallbackLogo('Blowjob'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-compilation',
+      name: 'Compilation',
+      url: 'https://cdn.adultiptv.net/compilation.m3u8',
+      logo: _getFallbackLogo('Compilation'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-cuckold',
+      name: 'Cuckold',
+      url: 'https://cdn.adultiptv.net/cuckold.m3u8',
+      logo: _getFallbackLogo('Cuckold'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-fetish',
+      name: 'Fetish',
+      url: 'https://cdn.adultiptv.net/fetish.m3u8',
+      logo: _getFallbackLogo('Fetish'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-gangbang',
+      name: 'Gangbang',
+      url: 'https://cdn.adultiptv.net/gangbang.m3u8',
+      logo: _getFallbackLogo('Gangbang'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-gay-cdn',
+      name: 'Gay',
+      url: 'https://cdn.adultiptv.net/gay.m3u8',
+      logo: _getFallbackLogo('Gay'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-hardcore',
+      name: 'Hardcore',
+      url: 'https://cdn.adultiptv.net/hardcore.m3u8',
+      logo: _getFallbackLogo('Hardcore'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-interracial',
+      name: 'Interracial',
+      url: 'https://cdn.adultiptv.net/interracial.m3u8',
+      logo: _getFallbackLogo('Interracial'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-livecams',
+      name: 'Live Cams',
+      url: 'https://cdn.adultiptv.net/livecams.m3u8',
+      logo: _getFallbackLogo('LiveCams'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-pornstar-cdn',
+      name: 'Pornstar',
+      url: 'https://cdn.adultiptv.net/pornstar.m3u8',
+      logo: _getFallbackLogo('Pornstar'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-pov',
+      name: 'POV',
+      url: 'https://cdn.adultiptv.net/pov.m3u8',
+      logo: _getFallbackLogo('POV'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-rough',
+      name: 'Rough',
+      url: 'https://cdn.adultiptv.net/rough.m3u8',
+      logo: _getFallbackLogo('Rough'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-russian',
+      name: 'Russian',
+      url: 'https://cdn.adultiptv.net/russian.m3u8',
+      logo: _getFallbackLogo('Russian'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-threesome',
+      name: 'Threesome',
+      url: 'https://cdn.adultiptv.net/threesome.m3u8',
+      logo: _getFallbackLogo('Threesome'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'adult-woman',
+      name: 'Woman',
+      url: 'https://live.redtraffic.net/woman.m3u8',
+      logo: _getFallbackLogo('Woman'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    // MyCamTV
+    Channel(
+      id: 'mycam-anal',
+      name: 'MyCam Anal',
+      url: 'https://live.mycamtv.com/anal.m3u8',
+      logo: _getFallbackLogo('MyCam'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'mycam-asian',
+      name: 'MyCam Asian',
+      url: 'https://live.mycamtv.com/asian.m3u8',
+      logo: _getFallbackLogo('MyCam'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'mycam-bigass',
+      name: 'MyCam Big Ass',
+      url: 'https://live.mycamtv.com/defstream.m3u8',
+      logo: _getFallbackLogo('MyCam'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'mycam-bigtits',
+      name: 'MyCam Big Tits',
+      url: 'https://live.mycamtv.com/bigtits.m3u8',
+      logo: _getFallbackLogo('MyCam'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'mycam-blonde',
+      name: 'MyCam Blonde',
+      url: 'https://live.mycamtv.com/blonde.m3u8',
+      logo: _getFallbackLogo('MyCam'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'mycam-brunette',
+      name: 'MyCam Brunette',
+      url: 'https://live.mycamtv.com/brunette.m3u8',
+      logo: _getFallbackLogo('MyCam'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'mycam-latina',
+      name: 'MyCam Latina',
+      url: 'https://live.mycamtv.com/latina.m3u8',
+      logo: _getFallbackLogo('MyCam'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'mycam-squirt',
+      name: 'MyCam Squirt',
+      url: 'https://live.mycamtv.com/squirt.m3u8',
+      logo: _getFallbackLogo('MyCam'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'mycam-white',
+      name: 'MyCam White',
+      url: 'https://live.mycamtv.com/white.m3u8',
+      logo: _getFallbackLogo('MyCam'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    // Canais Premium
+    Channel(
+      id: 'jenny-live',
+      name: 'Jenny Live',
+      url: 'https://59ec5453559f0.streamlock.net/JennyLive/JennyLive/playlist.m3u8',
+      logo: _getFallbackLogo('Jenny'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'miami-tv-mexico',
+      name: 'Miami TV Mexico',
+      url: 'https://59ec5453559f0.streamlock.net/mexicotv/smil:miamitvmexico/playlist.m3u8',
+      logo: _getFallbackLogo('Miami'),
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'olala',
+      name: 'O-la-la!',
+      url: 'http://31.148.48.15/O-la-la/index.m3u8',
+      logo: 'https://i.imgur.com/6aOmZs4.png',
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+    Channel(
+      id: 'playboy-latam',
+      name: 'Playboy TV Latin America',
+      url: 'http://190.11.225.124:5000/live/playboy_hd/playlist.m3u8',
+      logo: 'https://i.imgur.com/B3DMUM9.png',
+      category: ChannelCategory.adulto,
+      isAdult: true,
+    ),
+  ];
+}

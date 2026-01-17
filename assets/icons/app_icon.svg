@@ -1,0 +1,59 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="200" fill="url(#gradient_bg)"/>
+  
+  <!-- Glow effect -->
+  <circle cx="512" cy="480" r="300" fill="url(#glow)" opacity="0.3"/>
+  
+  <!-- TV Frame -->
+  <rect x="262" y="262" width="500" height="380" rx="40" fill="#1A1F36" stroke="url(#gradient_stroke)" stroke-width="12"/>
+  
+  <!-- TV Screen -->
+  <rect x="292" y="292" width="440" height="320" rx="20" fill="url(#screen_gradient)"/>
+  
+  <!-- Play Button -->
+  <circle cx="512" cy="452" r="80" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.4)" stroke-width="4"/>
+  <path d="M480 412 L560 452 L480 492 Z" fill="white"/>
+  
+  <!-- Signal waves -->
+  <path d="M680 300 Q720 320 680 360" stroke="#00D4FF" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.8"/>
+  <path d="M700 280 Q760 310 700 380" stroke="#00D4FF" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <path d="M720 260 Q800 300 720 400" stroke="#00D4FF" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.3"/>
+  
+  <!-- TV Stand -->
+  <rect x="432" y="660" width="160" height="20" rx="10" fill="#1A1F36"/>
+  <rect x="382" y="690" width="260" height="16" rx="8" fill="url(#gradient_stroke)"/>
+  
+  <!-- Live indicator -->
+  <circle cx="330" cy="330" r="12" fill="#FF3B5C"/>
+  <text x="352" y="338" font-family="Arial Black" font-size="24" fill="white" font-weight="bold">LIVE</text>
+  
+  <!-- Brand text -->
+  <text x="512" y="820" font-family="Arial Black" font-size="72" fill="white" text-anchor="middle" font-weight="bold">SAIMO</text>
+  <text x="512" y="880" font-family="Arial" font-size="36" fill="#00D4FF" text-anchor="middle" letter-spacing="8">TV</text>
+  
+  <!-- Definitions -->
+  <defs>
+    <linearGradient id="gradient_bg" x1="0" y1="0" x2="1024" y2="1024">
+      <stop offset="0%" stop-color="#0A0E21"/>
+      <stop offset="50%" stop-color="#141933"/>
+      <stop offset="100%" stop-color="#0A0E21"/>
+    </linearGradient>
+    
+    <linearGradient id="gradient_stroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00D4FF"/>
+      <stop offset="50%" stop-color="#7B61FF"/>
+      <stop offset="100%" stop-color="#00D4FF"/>
+    </linearGradient>
+    
+    <linearGradient id="screen_gradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1E2A4A"/>
+      <stop offset="100%" stop-color="#0D1220"/>
+    </linearGradient>
+    
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#00D4FF"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+  </defs>
+</svg>
