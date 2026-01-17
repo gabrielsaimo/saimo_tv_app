@@ -19,6 +19,9 @@ class _HomeSelectorScreenState extends State<HomeSelectorScreen>
   
   // 2 opções: Canais, Filmes
   static const int _totalOptions = 2;
+  
+  // Controle de saída - duplo tap para sair
+  DateTime? _lastBackPress;
 
   @override
   void initState() {
@@ -47,25 +50,24 @@ class _HomeSelectorScreenState extends State<HomeSelectorScreen>
     _mainFocusNode.dispose();
     super.dispose();
   }
-
-  void _handleKeyEvent(KeyEvent event) {
-    if (event is! KeyDownEvent) return;
-
-    final key = event.logicalKey;
-
-    if (key == LogicalKeyboardKey.arrowLeft ||
-        key == LogicalKeyboardKey.arrowUp) {
-      setState(() => _selectedIndex = (_selectedIndex - 1).clamp(0, _totalOptions - 1));
-      HapticFeedback.selectionClick();
-    } else if (key == LogicalKeyboardKey.arrowRight ||
-        key == LogicalKeyboardKey.arrowDown) {
-      setState(() => _selectedIndex = (_selectedIndex + 1).clamp(0, _totalOptions - 1));
-      HapticFeedback.selectionClick();
-    } else if (key == LogicalKeyboardKey.select ||
-        key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.gameButtonA) {
-      _selectOption();
+  
+  Future<bool> _handleBackPress() async {
+    final now = DateTime.now();
+    if (_lastBackPress != null && now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+      // Duplo tap em 2 segundos - fecha o app
+      SystemNavigator.pop();
+      return true;
     }
+    
+    _lastBackPress = now;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Pressione VOLTAR novamente para sair'),
+        duration: Duration(seconds: 2),
+        backgroundColor: Color(0xFFE50914),
+      ),
+    );
+    return false;
   }
 
   void _selectOption() {
@@ -82,28 +84,66 @@ class _HomeSelectorScreenState extends State<HomeSelectorScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: SaimoTheme.background,
-      body: KeyboardListener(
-        focusNode: _mainFocusNode,
-        onKeyEvent: _handleKeyEvent,
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                SaimoTheme.background,
-                SaimoTheme.background.withOpacity(0.95),
-                const Color(0xFF1a1a2e),
-              ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        // Este callback captura o evento de sistema Android quando Focus não captura
+        if (!didPop) {
+          // Não faz nada aqui - o Focus.onKeyEvent já tratou
+          // Este PopScope existe apenas para bloquear o pop padrão
+        }
+      },
+      child: Scaffold(
+        backgroundColor: SaimoTheme.background,
+        body: Focus(
+          focusNode: _mainFocusNode,
+          autofocus: true,
+          onKeyEvent: (node, event) {
+            if (event is! KeyDownEvent) return KeyEventResult.ignored;
+            
+            final key = event.logicalKey;
+            
+            if (key == LogicalKeyboardKey.arrowLeft ||
+                key == LogicalKeyboardKey.arrowUp) {
+              setState(() => _selectedIndex = (_selectedIndex - 1).clamp(0, _totalOptions - 1));
+              HapticFeedback.selectionClick();
+              return KeyEventResult.handled;
+            } else if (key == LogicalKeyboardKey.arrowRight ||
+                       key == LogicalKeyboardKey.arrowDown) {
+              setState(() => _selectedIndex = (_selectedIndex + 1).clamp(0, _totalOptions - 1));
+              HapticFeedback.selectionClick();
+              return KeyEventResult.handled;
+            } else if (key == LogicalKeyboardKey.select ||
+                       key == LogicalKeyboardKey.enter ||
+                       key == LogicalKeyboardKey.gameButtonA) {
+              _selectOption();
+              return KeyEventResult.handled;
+            } else if (key == LogicalKeyboardKey.goBack || 
+                       key == LogicalKeyboardKey.escape ||
+                       key == LogicalKeyboardKey.browserBack) {
+              _handleBackPress();
+              return KeyEventResult.handled;
+            }
+            
+            return KeyEventResult.ignored;
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  SaimoTheme.background,
+                  SaimoTheme.background.withOpacity(0.95),
+                  const Color(0xFF1a1a2e),
+                ],
+              ),
             ),
-          ),
-          child: SafeArea(
-            child: Column(
-              children: [
-                // Logo e título - Compacto para TV
-                Padding(
+            child: SafeArea(
+              child: Column(
+                children: [
+                  // Logo e título - Compacto para TV
+                  Padding(
                   padding: const EdgeInsets.only(top: 16, bottom: 8),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -244,6 +284,7 @@ class _HomeSelectorScreenState extends State<HomeSelectorScreen>
             ),
           ),
         ),
+      ),
       ),
     );
   }

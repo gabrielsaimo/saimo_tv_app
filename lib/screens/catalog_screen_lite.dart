@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/lazy_movies_provider.dart';
 import '../widgets/movie_detail_modal.dart';
 import '../widgets/series_modal_optimized.dart';
+import '../widgets/advanced_filters_modal.dart';
 import '../services/tmdb_image_service.dart';
 
 /// Tela de Catálogo Ultra Otimizada para Fire TV Lite
@@ -25,7 +26,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   // Seções: 0=header, 1=filtros, 2=conteúdo
   int _section = 1;
   int _headerIndex = 0; // 0=voltar, 1=tv ao vivo, 2=config
-  int _filterIndex = 0; // 0=categorias, 1=todos, 2=filmes, 3=séries, 4=buscar
+  int _filterIndex = 0; // 0=categorias, 1=todos, 2=filmes, 3=séries, 4=avançado, 5=buscar
   int _contentRow = 0;
   int _contentCol = 0;
   
@@ -270,7 +271,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       if (_section == 0) {
         if (_headerIndex < 2) _headerIndex++;
       } else if (_section == 1) {
-        if (_filterIndex < 4) _filterIndex++; // Agora vai até 4 (buscar)
+        if (_filterIndex < 5) _filterIndex++; // Agora vai até 5 (buscar)
       } else if (_section == 2) {
         final idx = _contentRow * _columns + _contentCol;
         if (idx < itemCount - 1) {
@@ -301,6 +302,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       if (_filterIndex == 0) {
         _openCategoryModal(provider);
       } else if (_filterIndex == 4) {
+        // Botão Filtros Avançados
+        _openAdvancedFilters(provider);
+      } else if (_filterIndex == 5) {
         // Botão Buscar
         _openSearch();
       } else {
@@ -415,6 +419,32 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       _modalIndex = idx >= 0 ? idx : 0;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollModal());
+  }
+
+  void _openAdvancedFilters(LazyMoviesProvider provider) {
+    showDialog(
+      context: context,
+      builder: (context) => AdvancedFiltersModal(
+        currentFilters: AdvancedFilters.empty,
+        onApply: (filters) {
+          // Aplica os filtros avançados
+          provider.setAdvancedFilters(
+            genres: filters.genres.isNotEmpty ? filters.genres : null,
+            yearFrom: filters.yearFrom,
+            minRating: filters.minRating,
+            certification: filters.certification,
+            language: filters.language,
+            maxRuntime: filters.maxRuntime,
+            sortBy: filters.sortBy.name,
+            sortDescending: filters.sortDescending,
+          );
+          
+          _contentRow = 0;
+          _contentCol = 0;
+          _scrollController.jumpTo(0);
+        },
+      ),
+    );
   }
 
   void _scrollToRow() {
@@ -622,12 +652,23 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           Container(width: 1, height: 24, color: Colors.white10),
           const SizedBox(width: 8),
           
+          // Botão FILTROS AVANÇADOS
+          _FilterButton(
+            icon: Icons.tune_rounded,
+            label: 'Avançado',
+            isSelected: false,
+            isFocused: _section == 1 && _filterIndex == 4,
+            isOrange: true,
+            onTap: () => _openAdvancedFilters(provider),
+          ),
+          const SizedBox(width: 8),
+          
           // Botão BUSCAR
           _FilterButton(
             icon: Icons.search_rounded,
             label: 'Buscar',
             isSelected: false,
-            isFocused: _section == 1 && _filterIndex == 4,
+            isFocused: _section == 1 && _filterIndex == 5,
             isGreen: true,
             onTap: _openSearch,
           ),
@@ -1218,6 +1259,7 @@ class _FilterButton extends StatelessWidget {
   final bool isFocused;
   final bool isBlue;
   final bool isGreen;
+  final bool isOrange;
   final VoidCallback onTap;
 
   const _FilterButton({
@@ -1227,6 +1269,7 @@ class _FilterButton extends StatelessWidget {
     required this.isFocused,
     this.isBlue = false,
     this.isGreen = false,
+    this.isOrange = false,
     required this.onTap,
   });
 
@@ -1239,11 +1282,15 @@ class _FilterButton extends StatelessWidget {
         gradientColors = [const Color(0xFF0077FF), const Color(0xFF00AAFF)];
       } else if (isGreen) {
         gradientColors = [const Color(0xFF10B981), const Color(0xFF34D399)];
+      } else if (isOrange) {
+        gradientColors = [const Color(0xFFFF8C00), const Color(0xFFFFAA33)];
       } else {
         gradientColors = [const Color(0xFFE50914), const Color(0xFFFF2020)];
       }
     } else if (isGreen && isFocused) {
       gradientColors = [const Color(0xFF10B981), const Color(0xFF34D399)];
+    } else if (isOrange && isFocused) {
+      gradientColors = [const Color(0xFFFF8C00), const Color(0xFFFFAA33)];
     }
     
     return GestureDetector(
@@ -1255,8 +1302,8 @@ class _FilterButton extends StatelessWidget {
           color: gradientColors == null ? Colors.white10 : null,
           borderRadius: BorderRadius.circular(20),
           border: isFocused ? Border.all(color: const Color(0xFFFFD700), width: 2) : null,
-          boxShadow: isGreen && isFocused ? [
-            BoxShadow(color: const Color(0xFF10B981).withOpacity(0.5), blurRadius: 8),
+          boxShadow: (isGreen && isFocused) || (isOrange && isFocused) ? [
+            BoxShadow(color: isOrange ? const Color(0xFFFF8C00).withOpacity(0.5) : const Color(0xFF10B981).withOpacity(0.5), blurRadius: 8),
           ] : null,
         ),
         child: Row(
@@ -1268,7 +1315,7 @@ class _FilterButton extends StatelessWidget {
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 12,
-                fontWeight: isSelected || (isGreen && isFocused) ? FontWeight.bold : FontWeight.normal,
+                fontWeight: isSelected || (isGreen && isFocused) || (isOrange && isFocused) ? FontWeight.bold : FontWeight.normal,
               ),
             ),
             if (isBlue) ...[

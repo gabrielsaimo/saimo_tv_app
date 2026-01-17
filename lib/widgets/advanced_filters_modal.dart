@@ -124,16 +124,18 @@ class AdvancedFiltersModal extends StatefulWidget {
 
 class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
   final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
   late AdvancedFilters _filters;
   
-  // Navegação
-  int _currentSection = 0; // 0=gêneros, 1=ano, 2=nota, 3=classificação, 4=idioma, 5=duração, 6=ordenação
+  // Navegação: 0=gêneros, 1=ano, 2=nota, 3=classificação, 4=duração, 5=ordenação, 6=botões
+  int _currentSection = 0;
   int _selectedItemIndex = 0;
+  
+  // Keys para scroll (7 seções)
+  final List<GlobalKey> _sectionKeys = List.generate(7, (_) => GlobalKey());
   
   // Dados disponíveis (extraídos do catálogo)
   Set<String> _availableGenres = {};
-  Set<String> _availableCertifications = {};
-  Set<String> _availableLanguages = {};
   int _minYear = 1950;
   int _maxYear = DateTime.now().year;
   
@@ -142,6 +144,9 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
   
   // Opções de nota
   final List<double?> _ratingOptions = [null, 9.0, 8.0, 7.0, 6.0, 5.0];
+  
+  // Opções de classificação indicativa (fixas)
+  final List<String> _certificationOptions = ['Todas', 'L', '10', '12', '14', '16', '18'];
   
   // Opções de duração (minutos)
   final List<int?> _runtimeOptions = [null, 60, 90, 120, 150, 180];
@@ -159,35 +164,44 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
   void _loadAvailableOptions() {
     final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
     
-    // Coleta gêneros, certificações e idiomas de todos os filmes carregados
+    // Coleta gêneros de todos os filmes carregados
     final genres = <String>{};
-    final certifications = <String>{};
-    final languages = <String>{};
     
     for (final item in provider.displayItems) {
       final tmdb = item.movie?.tmdb ?? item.series?.tmdb;
       if (tmdb != null) {
         if (tmdb.genres != null) genres.addAll(tmdb.genres!);
-        if (tmdb.certification != null) certifications.add(tmdb.certification!);
-        if (tmdb.language != null) languages.add(tmdb.language!);
       }
     }
     
     setState(() {
       _availableGenres = genres;
-      _availableCertifications = certifications;
-      _availableLanguages = languages;
     });
   }
 
   @override
   void dispose() {
     _focusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+  
+  void _scrollToSection(int section) {
+    if (section < 0 || section >= _sectionKeys.length) return;
+    final key = _sectionKeys[section];
+    final context = key.currentContext;
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+      );
+    }
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.handled;
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
     final key = event.logicalKey;
 
@@ -211,7 +225,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
       return KeyEventResult.handled;
     }
 
-    return KeyEventResult.handled;
+    return KeyEventResult.ignored;
   }
 
   void _navigateUp() {
@@ -221,14 +235,20 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
         _selectedItemIndex = 0;
       }
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToSection(_currentSection);
+    });
   }
 
   void _navigateDown() {
     setState(() {
-      if (_currentSection < 7) { // 0-6 são seções + 7 é botões
+      if (_currentSection < 6) { // 0-5 são seções + 6 é botões
         _currentSection++;
         _selectedItemIndex = 0;
       }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToSection(_currentSection);
     });
   }
 
@@ -252,13 +272,12 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
   int _getMaxIndexForSection(int section) {
     switch (section) {
       case 0: return _availableGenres.length - 1; // Gêneros
-      case 1: return _yearOptions.length - 1; // Ano de
+      case 1: return _yearOptions.length - 1; // Ano
       case 2: return _ratingOptions.length - 1; // Nota
-      case 3: return _availableCertifications.length; // Classificação (+ "Todas")
-      case 4: return _availableLanguages.length; // Idioma (+ "Todos")
-      case 5: return _runtimeOptions.length - 1; // Duração
-      case 6: return SortOption.values.length - 1; // Ordenação
-      case 7: return 2; // Botões (Limpar, Cancelar, Aplicar)
+      case 3: return _certificationOptions.length - 1; // Classificação
+      case 4: return _runtimeOptions.length - 1; // Duração
+      case 5: return SortOption.values.length - 1; // Ordenação
+      case 6: return 2; // Botões (Limpar, Cancelar, Aplicar)
       default: return 0;
     }
   }
@@ -292,8 +311,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
         });
         break;
       case 3: // Classificação
-        final certList = ['Todas', ..._availableCertifications];
-        final cert = certList[_selectedItemIndex.clamp(0, certList.length - 1)];
+        final cert = _certificationOptions[_selectedItemIndex.clamp(0, _certificationOptions.length - 1)];
         setState(() {
           _filters = _filters.copyWith(
             certification: cert == 'Todas' ? null : cert,
@@ -301,23 +319,13 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
           );
         });
         break;
-      case 4: // Idioma
-        final langList = ['Todos', ..._availableLanguages];
-        final lang = langList[_selectedItemIndex.clamp(0, langList.length - 1)];
-        setState(() {
-          _filters = _filters.copyWith(
-            language: lang == 'Todos' ? null : lang,
-            clearLanguage: lang == 'Todos',
-          );
-        });
-        break;
-      case 5: // Duração
+      case 4: // Duração
         final runtime = _runtimeOptions[_selectedItemIndex.clamp(0, _runtimeOptions.length - 1)];
         setState(() {
           _filters = _filters.copyWith(maxRuntime: runtime, clearMaxRuntime: runtime == null);
         });
         break;
-      case 6: // Ordenação
+      case 5: // Ordenação
         final sort = SortOption.values[_selectedItemIndex.clamp(0, SortOption.values.length - 1)];
         setState(() {
           if (_filters.sortBy == sort) {
@@ -328,7 +336,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
           }
         });
         break;
-      case 7: // Botões
+      case 6: // Botões
         if (_selectedItemIndex == 0) {
           // Limpar
           setState(() => _filters = AdvancedFilters.empty);
@@ -384,25 +392,24 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
                 _buildHeader(),
                 Expanded(
                   child: SingleChildScrollView(
+                    controller: _scrollController,
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildGenresSection(),
+                        Container(key: _sectionKeys[0], child: _buildGenresSection()),
                         const SizedBox(height: 24),
-                        _buildYearSection(),
+                        Container(key: _sectionKeys[1], child: _buildYearSection()),
                         const SizedBox(height: 24),
-                        _buildRatingSection(),
+                        Container(key: _sectionKeys[2], child: _buildRatingSection()),
                         const SizedBox(height: 24),
-                        _buildCertificationSection(),
+                        Container(key: _sectionKeys[3], child: _buildCertificationSection()),
                         const SizedBox(height: 24),
-                        _buildLanguageSection(),
+                        Container(key: _sectionKeys[4], child: _buildRuntimeSection()),
                         const SizedBox(height: 24),
-                        _buildRuntimeSection(),
+                        Container(key: _sectionKeys[5], child: _buildSortSection()),
                         const SizedBox(height: 24),
-                        _buildSortSection(),
-                        const SizedBox(height: 24),
-                        _buildActionButtons(),
+                        Container(key: _sectionKeys[6], child: _buildActionButtons()),
                         const SizedBox(height: 16),
                       ],
                     ),
@@ -666,7 +673,6 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
 
   Widget _buildCertificationSection() {
     final isFocused = _currentSection == 3;
-    final certList = ['Todas', ..._availableCertifications.toList()..sort()];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -675,7 +681,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: certList.asMap().entries.map((entry) {
+          children: _certificationOptions.asMap().entries.map((entry) {
             final index = entry.key;
             final cert = entry.value;
             final isSelected = cert == 'Todas' 
@@ -683,53 +689,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
                 : _filters.certification == cert;
             final isItemFocused = isFocused && _selectedItemIndex == index;
             return _buildChip(
-              label: cert,
-              isSelected: isSelected,
-              isFocused: isItemFocused,
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLanguageSection() {
-    final isFocused = _currentSection == 4;
-    final langList = ['Todos', ..._availableLanguages.toList()..sort()];
-    
-    // Mapeia códigos para nomes
-    final langNames = {
-      'en': 'Inglês',
-      'pt': 'Português',
-      'es': 'Espanhol',
-      'fr': 'Francês',
-      'de': 'Alemão',
-      'it': 'Italiano',
-      'ja': 'Japonês',
-      'ko': 'Coreano',
-      'zh': 'Chinês',
-      'hi': 'Hindi',
-      'ru': 'Russo',
-      'tr': 'Turco',
-    };
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('Idioma Original', Icons.language_rounded, isFocused),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: langList.asMap().entries.map((entry) {
-            final index = entry.key;
-            final lang = entry.value;
-            final displayName = lang == 'Todos' ? lang : (langNames[lang] ?? lang.toUpperCase());
-            final isSelected = lang == 'Todos' 
-                ? _filters.language == null 
-                : _filters.language == lang;
-            final isItemFocused = isFocused && _selectedItemIndex == index;
-            return _buildChip(
-              label: displayName,
+              label: cert == 'Todas' ? cert : '$cert anos',
               isSelected: isSelected,
               isFocused: isItemFocused,
             );
@@ -740,7 +700,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
   }
 
   Widget _buildRuntimeSection() {
-    final isFocused = _currentSection == 5;
+    final isFocused = _currentSection == 4;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -771,7 +731,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
   }
 
   Widget _buildSortSection() {
-    final isFocused = _currentSection == 6;
+    final isFocused = _currentSection == 5;
     final sortLabels = {
       SortOption.name: 'Nome',
       SortOption.year: 'Ano',
@@ -807,7 +767,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
   }
 
   Widget _buildActionButtons() {
-    final isFocused = _currentSection == 7;
+    final isFocused = _currentSection == 6;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,

@@ -24,11 +24,12 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
   
   // Navegação por seções: 0=botões, 1=temporadas, 2=episódios, 3=elenco, 4=recomendações
   int _currentSection = 0;
-  int _selectedButton = 0;
+  int _selectedButton = 0; // 0=Assistir, 1=Fechar
   int _selectedSeasonIndex = 0;
   int _selectedEpisodeIndex = 0;
   int _selectedCastIndex = 0;
   int _selectedRecommendationIndex = 0;
+  bool _closeButtonFocused = false; // Botão fechar no canto superior direito
   
   // TMDB data
   TMDBData? get _tmdb => widget.series.tmdb;
@@ -97,6 +98,25 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
 
     final key = event.logicalKey;
 
+    // Se botão fechar está focado
+    if (_closeButtonFocused) {
+      if (key == LogicalKeyboardKey.arrowDown || key == LogicalKeyboardKey.arrowLeft) {
+        setState(() {
+          _closeButtonFocused = false;
+          _currentSection = 0;
+          _selectedButton = 1; // Vai para botão Fechar nos botões de ação
+        });
+        return KeyEventResult.handled;
+      } else if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter) {
+        Navigator.of(context).pop();
+        return KeyEventResult.handled;
+      } else if (key == LogicalKeyboardKey.goBack || key == LogicalKeyboardKey.escape) {
+        Navigator.of(context).pop();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.handled;
+    }
+
     if (key == LogicalKeyboardKey.arrowUp) {
       _navigateUp();
       return KeyEventResult.handled;
@@ -124,7 +144,8 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
     setState(() {
       switch (_currentSection) {
         case 0:
-          _scrollUp();
+          // Nos botões de ação, seta pra cima vai para o botão fechar
+          _closeButtonFocused = true;
           break;
         case 1:
           _currentSection = 0;
@@ -497,13 +518,26 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
                   right: 10,
                   child: GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: Colors.black54,
+                        color: _closeButtonFocused 
+                            ? const Color(0xFFE50914)
+                            : Colors.black54,
                         borderRadius: BorderRadius.circular(20),
+                        border: _closeButtonFocused 
+                            ? Border.all(color: const Color(0xFFFFD700), width: 2)
+                            : null,
+                        boxShadow: _closeButtonFocused 
+                            ? [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.5), blurRadius: 10)]
+                            : null,
                       ),
-                      child: const Icon(Icons.close, color: Colors.white, size: 20),
+                      child: Icon(
+                        Icons.close, 
+                        color: Colors.white, 
+                        size: _closeButtonFocused ? 24 : 20,
+                      ),
                     ),
                   ),
                 ),

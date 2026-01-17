@@ -292,10 +292,7 @@ class _ChannelsScreenState extends State<ChannelsScreen>
     int newIndex = channelIndex;
 
     switch (event.logicalKey) {
-      case LogicalKeyboardKey.escape:
-      case LogicalKeyboardKey.goBack:
-        Navigator.of(context).maybePop();
-        return;
+      // NOTA: goBack e escape são tratados pelo PopScope para evitar duplicação
       case LogicalKeyboardKey.keyS:
         Navigator.of(context).pushNamed('/search');
         return;
@@ -1174,11 +1171,7 @@ class _ChannelsScreenState extends State<ChannelsScreen>
           return KeyEventResult.handled;
         }
         
-        // Escape/Back - volta
-        if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
-          Navigator.of(context).maybePop();
-          return KeyEventResult.handled;
-        }
+        // NOTA: Escape/Back são tratados pelo PopScope para evitar duplicação
         
         // Navegação seta esquerda - vai para sidebar na primeira coluna
         if (key == LogicalKeyboardKey.arrowLeft && index % columns == 0) {

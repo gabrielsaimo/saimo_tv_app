@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/movie.dart';
+import 'movie_detail_modal.dart' show ActorFilmographyModal;
 
 /// Modal de série otimizado para TV - Layout simplificado com navegação D-PAD
 /// Temporadas em grid que quebra de 10 em 10, episódios em lista vertical
@@ -18,14 +19,22 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
   final FocusNode _focusNode = FocusNode();
   final ScrollController _seasonsScrollController = ScrollController();
   final ScrollController _episodesScrollController = ScrollController();
+  final ScrollController _castScrollController = ScrollController();
   
-  // Navegação: 0=temporadas, 1=episódios
-  int _currentSection = 0;
+  // Navegação: 0=elenco, 1=temporadas, 2=episódios
+  int _currentSection = 1; // Começa nas temporadas
   int _selectedSeasonIndex = 0;
   int _selectedEpisodeIndex = 0;
+  int _selectedCastIndex = 0;
   
   // TMDB data - direto do JSON
   TMDBData? get _tmdb => widget.series.tmdb;
+
+  List<CastMember> get _castList {
+    final cast = _tmdb?.cast;
+    if (cast == null || cast.isEmpty) return [];
+    return cast.length > 8 ? cast.sublist(0, 8) : cast;
+  }
 
   @override
   void initState() {
@@ -50,6 +59,7 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
     _focusNode.dispose();
     _seasonsScrollController.dispose();
     _episodesScrollController.dispose();
+    _castScrollController.dispose();
     super.dispose();
   }
 
@@ -84,10 +94,17 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
   void _navigateUp() {
     setState(() {
       if (_currentSection == 0) {
+        // No elenco - não faz nada (já está no topo)
+      } else if (_currentSection == 1) {
         // Nas temporadas - sobe linha (se tiver mais de 10)
         if (_selectedSeasonIndex >= 10) {
           _selectedSeasonIndex -= 10;
           _scrollToSeason(_selectedSeasonIndex);
+        } else if (_castList.isNotEmpty) {
+          // Vai para elenco
+          _currentSection = 0;
+          _selectedCastIndex = 0;
+          _scrollToCast(0);
         }
       } else {
         // Nos episódios - sobe na lista
@@ -96,7 +113,7 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
           _scrollToEpisode(_selectedEpisodeIndex);
         } else {
           // Volta para temporadas
-          _currentSection = 0;
+          _currentSection = 1;
         }
       }
     });
@@ -105,6 +122,11 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
   void _navigateDown() {
     setState(() {
       if (_currentSection == 0) {
+        // No elenco - vai para temporadas
+        _currentSection = 1;
+        _selectedSeasonIndex = 0;
+        _scrollToSeason(0);
+      } else if (_currentSection == 1) {
         // Nas temporadas - desce linha ou vai para episódios
         final nextIndex = _selectedSeasonIndex + 10;
         if (nextIndex < _availableSeasons.length) {
@@ -112,7 +134,7 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
           _scrollToSeason(_selectedSeasonIndex);
         } else {
           // Vai para episódios
-          _currentSection = 1;
+          _currentSection = 2;
           _selectedEpisodeIndex = 0;
           _scrollToEpisode(0);
         }
@@ -129,13 +151,19 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
   void _navigateLeft() {
     setState(() {
       if (_currentSection == 0) {
+        // No elenco - move para esquerda
+        if (_selectedCastIndex > 0) {
+          _selectedCastIndex--;
+          _scrollToCast(_selectedCastIndex);
+        }
+      } else if (_currentSection == 1) {
         // Nas temporadas - move para esquerda
         if (_selectedSeasonIndex > 0 && _selectedSeasonIndex % 10 > 0) {
           _selectedSeasonIndex--;
         }
       } else {
         // Nos episódios - volta para temporadas
-        _currentSection = 0;
+        _currentSection = 1;
       }
     });
   }
@@ -143,18 +171,43 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
   void _navigateRight() {
     setState(() {
       if (_currentSection == 0) {
+        // No elenco - move para direita
+        if (_selectedCastIndex < _castList.length - 1) {
+          _selectedCastIndex++;
+          _scrollToCast(_selectedCastIndex);
+        } else {
+          // Vai para temporadas
+          _currentSection = 1;
+          _selectedSeasonIndex = 0;
+        }
+      } else if (_currentSection == 1) {
         // Nas temporadas - move para direita ou vai para episódios
         final nextIndex = _selectedSeasonIndex + 1;
         if (nextIndex < _availableSeasons.length && nextIndex % 10 != 0) {
           _selectedSeasonIndex = nextIndex;
         } else {
           // Vai para episódios
-          _currentSection = 1;
+          _currentSection = 2;
           _selectedEpisodeIndex = 0;
           _scrollToEpisode(0);
         }
       }
     });
+  }
+
+  void _scrollToCast(int index) {
+    if (!_castScrollController.hasClients) return;
+    const itemWidth = 120.0;
+    final viewportWidth = _castScrollController.position.viewportDimension;
+    final itemCenter = (index * itemWidth) + (itemWidth / 2);
+    final viewportCenter = viewportWidth / 2;
+    final targetOffset = itemCenter - viewportCenter;
+    
+    _castScrollController.animateTo(
+      targetOffset.clamp(0.0, _castScrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 100),
+      curve: Curves.easeOut,
+    );
   }
 
   void _scrollToSeason(int index) {
@@ -185,9 +238,15 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
 
   void _handleSelect() {
     if (_currentSection == 0) {
+      // No elenco - abre filmografia do ator
+      final cast = _castList;
+      if (_selectedCastIndex < cast.length) {
+        _showActorFilmography(cast[_selectedCastIndex]);
+      }
+    } else if (_currentSection == 1) {
       // Seleciona temporada e vai para episódios
       setState(() {
-        _currentSection = 1;
+        _currentSection = 2;
         _selectedEpisodeIndex = 0;
       });
       _scrollToEpisode(0);
@@ -199,6 +258,13 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
         Navigator.of(context).pushNamed('/movie-player', arguments: episodes[_selectedEpisodeIndex]);
       }
     }
+  }
+
+  void _showActorFilmography(CastMember actor) {
+    showDialog(
+      context: context,
+      builder: (context) => ActorFilmographyModal(actor: actor),
+    );
   }
 
   @override
@@ -397,32 +463,57 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
   }
 
   Widget _buildCastSection() {
-    final cast = _tmdb?.cast;
-    if (cast == null || cast.isEmpty) return const SizedBox.shrink();
+    final cast = _castList;
+    if (cast.isEmpty) return const SizedBox.shrink();
+    
+    final isCastSection = _currentSection == 0;
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'ELENCO',
-          style: TextStyle(
-            color: Colors.white54,
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1,
-          ),
+        Row(
+          children: [
+            const Text(
+              'ELENCO',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
+            if (isCastSection) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFD700).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: const Text(
+                  '← → navegar | OK filmografia',
+                  style: TextStyle(color: Color(0xFFFFD700), fontSize: 8),
+                ),
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: 6),
         SizedBox(
-          height: 50,
+          height: 58,
           child: ListView.builder(
+            controller: _castScrollController,
             scrollDirection: Axis.horizontal,
-            itemCount: cast.length > 8 ? 8 : cast.length,
+            itemCount: cast.length,
             itemBuilder: (context, index) {
               final actor = cast[index];
+              final isFocused = isCastSection && _selectedCastIndex == index;
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: _buildActorChip(actor),
+                child: GestureDetector(
+                  onTap: () => _showActorFilmography(actor),
+                  child: _buildActorChip(actor, isFocused),
+                ),
               );
             },
           ),
@@ -431,14 +522,18 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
     );
   }
 
-  Widget _buildActorChip(CastMember actor) {
+  Widget _buildActorChip(CastMember actor, bool isFocused) {
     final hasPhoto = actor.photo != null && actor.photo!.isNotEmpty;
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 100),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withAlpha(13),
+        color: isFocused ? const Color(0xFFE50914).withOpacity(0.3) : Colors.white.withAlpha(13),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(
+          color: isFocused ? const Color(0xFFFFD700) : Colors.white10,
+          width: isFocused ? 2 : 1,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -533,14 +628,14 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
               final season = entry.value;
               final globalIndex = startIndex + localIndex;
               final isSelected = _selectedSeasonIndex == globalIndex;
-              final isFocused = _currentSection == 0 && isSelected;
+              final isFocused = _currentSection == 1 && isSelected;
               
               return GestureDetector(
                 onTap: () {
                   setState(() {
                     _selectedSeasonIndex = globalIndex;
                     _selectedEpisodeIndex = 0;
-                    _currentSection = 1;
+                    _currentSection = 2;
                   });
                 },
                 child: AnimatedContainer(
@@ -631,7 +726,7 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
                   itemCount: episodes.length,
                   itemBuilder: (context, index) {
                     final episode = episodes[index];
-                    final isFocused = _currentSection == 1 && _selectedEpisodeIndex == index;
+                    final isFocused = _currentSection == 2 && _selectedEpisodeIndex == index;
                     
                     return GestureDetector(
                       onTap: () {
