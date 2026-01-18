@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import '../models/movie.dart';
 
 /// Índice de categoria do catálogo JSON
@@ -51,17 +54,27 @@ class JsonCategoryData {
 
 /// Serviço otimizado para carregar catálogo JSON com lazy loading
 /// 
-/// Substitui o LazyMoviesService original para usar a pasta json/
-/// com os arquivos categories.json e arquivos individuais por categoria
+/// Carrega dados REMOTAMENTE do GitHub com cache local
+/// Substitui o LazyMoviesService original para usar dados online
 class JsonLazyService {
   static final JsonLazyService _instance = JsonLazyService._internal();
   factory JsonLazyService() => _instance;
   JsonLazyService._internal();
 
   // === Configurações ===
-  // IMPORTANTE: Agora usa a pasta json/enriched que contém dados TMDB
-  static const String _jsonPath = 'json/enriched';
-  static const String _categoriesFile = 'json/categories.json'; // Caminho absoluto
+  /// URL base para carregar dados remotamente do GitHub
+  static const String _remoteBaseUrl = 
+      'https://raw.githubusercontent.com/gabrielsaimo/free-tv/main/public/data/enriched';
+  
+  /// Arquivo de categorias LOCAL (na pasta json/)
+  static const String _localCategoriesFile = 'json/categories.json';
+  
+  /// Timeout para requisições HTTP
+  static const Duration _httpTimeout = Duration(seconds: 30);
+  
+  /// Tempo de cache local (7 dias)
+  static const Duration _localCacheTTL = Duration(days: 7);
+  
   static const int _maxCategoriesInMemory = 8;
   static const int _cacheTTLMinutes = 60;
 
@@ -99,7 +112,7 @@ class JsonLazyService {
     RegExp(r'^(.+?)\s*(\d+)\s*x\s*(\d+)', caseSensitive: false),
   ];
 
-  /// Carrega o índice de categorias (leve, ~5KB)
+  /// Carrega o índice de categorias (leve, ~5KB) - DO ARQUIVO LOCAL
   Future<List<JsonCategoryIndex>> loadCategoryIndex() async {
     if (_categoryIndex != null) {
       return _categoryIndex!;
@@ -115,10 +128,12 @@ class JsonLazyService {
     _isLoadingIndex = true;
 
     try {
-      debugPrint('📂 Carregando índice de categorias JSON...');
+      debugPrint('📂 Carregando índice de categorias LOCAL...');
       final stopwatch = Stopwatch()..start();
 
-      final content = await rootBundle.loadString(_categoriesFile);
+      // Carrega do arquivo local (assets)
+      final content = await rootBundle.loadString(_localCategoriesFile);
+
       final data = jsonDecode(content) as List<dynamic>;
 
       _categoryIndex = data
@@ -159,10 +174,78 @@ class JsonLazyService {
       _isLoadingIndex = false;
     }
   }
+  
+  /// Busca conteúdo de URL remota
+  Future<String?> _fetchFromRemote(String url) async {
+    try {
+      debugPrint('🌐 Buscando URL: $url');
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+      ).timeout(_httpTimeout);
+      
+      if (response.statusCode == 200) {
+        debugPrint('✅ HTTP 200 OK - ${response.body.length} bytes');
+        return response.body;
+      } else {
+        debugPrint('❌ Erro HTTP ${response.statusCode}: $url');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('❌ Erro ao buscar $url: $e');
+      return null;
+    }
+  }
+  
+  /// Carrega do cache local
+  Future<String?> _loadFromLocalCache(String filename) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/json_cache/$filename');
+      
+      if (!file.existsSync()) {
+        return null;
+      }
+      
+      // Verifica se cache expirou
+      final modified = file.lastModifiedSync();
+      final age = DateTime.now().difference(modified);
+      if (age > _localCacheTTL) {
+        debugPrint('📁 Cache expirado: $filename');
+        return null;
+      }
+      
+      debugPrint('📁 Cache hit: $filename');
+      return file.readAsStringSync();
+    } catch (e) {
+      debugPrint('⚠️ Erro ao ler cache: $e');
+      return null;
+    }
+  }
+  
+  /// Salva no cache local
+  Future<void> _saveToLocalCache(String filename, String content) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final cacheDir = Directory('${dir.path}/json_cache');
+      if (!cacheDir.existsSync()) {
+        cacheDir.createSync(recursive: true);
+      }
+      
+      final file = File('${cacheDir.path}/$filename');
+      await file.writeAsString(content);
+      debugPrint('💾 Cache salvo: $filename');
+    } catch (e) {
+      debugPrint('⚠️ Erro ao salvar cache: $e');
+    }
+  }
 
   /// Carrega uma categoria específica (lazy loading)
   Future<JsonCategoryData?> loadCategory(String categoryId, {bool includeAdult = false}) async {
-    // Verifica cache
+    // Verifica cache em memória
     if (_categoryCache.containsKey(categoryId)) {
       final cached = _categoryCache[categoryId]!;
       final age = DateTime.now().difference(cached.loadedAt).inMinutes;
@@ -181,7 +264,24 @@ class JsonLazyService {
 
     try {
       final filename = '$categoryId.json';
-      final content = await rootBundle.loadString('$_jsonPath/$filename');
+      
+      // Tenta carregar do cache local primeiro
+      String? content = await _loadFromLocalCache(filename);
+      
+      // Se não tem cache, carrega do GitHub
+      if (content == null) {
+        debugPrint('🌐 Buscando categoria do GitHub: $categoryId');
+        final url = '$_remoteBaseUrl/$filename';
+        content = await _fetchFromRemote(url);
+        if (content != null) {
+          await _saveToLocalCache(filename, content);
+        }
+      }
+      
+      if (content == null) {
+        debugPrint('❌ Não foi possível carregar categoria: $categoryId');
+        return null;
+      }
       
       // Parse em isolate
       final parsed = await compute(_parseCategoryContent, content);

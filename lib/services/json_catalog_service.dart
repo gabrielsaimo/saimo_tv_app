@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import '../models/movie.dart';
 
 /// Informações de uma categoria do catálogo JSON
@@ -14,8 +16,8 @@ class JsonCategoryInfo {
   const JsonCategoryInfo({
     required this.name,
     required this.file,
-    required this.count,
-    required this.isAdult,
+    this.count = 0,
+    this.isAdult = false,
   });
 
   factory JsonCategoryInfo.fromJson(Map<String, dynamic> json) {
@@ -46,13 +48,12 @@ class CategoryParseResult {
   });
 }
 
-/// Serviço otimizado para carregar catálogo a partir de arquivos JSON
+/// Serviço otimizado para carregar catálogo a partir de arquivos JSON remotos
 /// 
-/// Vantagens sobre o parser M3U8:
-/// - Dados já estruturados e prontos para uso
-/// - Carregamento muito mais rápido
+/// - Lista de categorias gerada dinamicamente
+/// - Os dados das categorias são carregados remotamente do GitHub
+/// - Cache local para funcionamento offline
 /// - Suporte a lazy loading por categoria
-/// - Menor uso de memória (carrega sob demanda)
 /// - Dados enriquecidos com TMDB (poster, sinopse, elenco, etc)
 class JsonCatalogService {
   static final JsonCatalogService _instance = JsonCatalogService._internal();
@@ -60,17 +61,116 @@ class JsonCatalogService {
   JsonCatalogService._internal();
 
   // === Configurações ===
-  // IMPORTANTE: Agora usa a pasta json/enriched que contém dados TMDB
-  static const String _jsonPath = 'json/enriched';
-  static const String _categoriesPath = 'json/categories.json'; // categories.json fica na pasta json/
+  /// URL base para carregar dados remotamente do GitHub
+  static const String _remoteBaseUrl = 
+      'https://raw.githubusercontent.com/gabrielsaimo/free-tv/main/public/data/enriched';
+  
+  /// Timeout para requisições HTTP
+  static const Duration _httpTimeout = Duration(seconds: 30);
+  
+  /// Tempo de cache local (7 dias)
+  static const Duration _localCacheTTL = Duration(days: 7);
+  
   static const int _maxCategoriesInMemory = 8;
-  static const int _cacheTTLMinutes = 60;
+
+  // === Lista de categorias disponíveis (gerada dinamicamente) ===
+  static const List<JsonCategoryInfo> _availableCategories = [
+    // Lançamentos e Destaques
+    JsonCategoryInfo(name: '🎬 Lançamentos', file: 'lancamentos.json'),
+    JsonCategoryInfo(name: '⭐ Sugestão da Semana', file: 'sugestao-da-semana.json'),
+    
+    // Streaming Platforms
+    JsonCategoryInfo(name: '📺 Netflix', file: 'netflix.json'),
+    JsonCategoryInfo(name: '📺 Prime Video', file: 'prime-video.json'),
+    JsonCategoryInfo(name: '📺 Disney+', file: 'disney.json'),
+    JsonCategoryInfo(name: '📺 Max', file: 'max.json'),
+    JsonCategoryInfo(name: '📺 Globoplay', file: 'globoplay.json'),
+    JsonCategoryInfo(name: '📺 Apple TV+', file: 'apple-tv.json'),
+    JsonCategoryInfo(name: '📺 Paramount+', file: 'paramount.json'),
+    JsonCategoryInfo(name: '📺 Star+', file: 'star.json'),
+    JsonCategoryInfo(name: '📺 Crunchyroll', file: 'crunchyroll.json'),
+    JsonCategoryInfo(name: '📺 Funimation', file: 'funimation.json'),
+    JsonCategoryInfo(name: '📺 Discovery+', file: 'discovery.json'),
+    JsonCategoryInfo(name: '📺 AMC+', file: 'amc-plus.json'),
+    JsonCategoryInfo(name: '📺 Claro Video', file: 'claro-video.json'),
+    JsonCategoryInfo(name: '📺 Play Plus', file: 'play-plus.json'),
+    JsonCategoryInfo(name: '📺 Pluto TV', file: 'plutotv.json'),
+    JsonCategoryInfo(name: '📺 Lionsgate+', file: 'lionsgate.json'),
+    JsonCategoryInfo(name: '📺 Univer', file: 'univer.json'),
+    JsonCategoryInfo(name: '📺 DirectTV', file: 'directv.json'),
+    
+    // Gêneros
+    JsonCategoryInfo(name: '🎬 4K UHD', file: '4k-uhd.json'),
+    JsonCategoryInfo(name: '🎬 Ação', file: 'acao.json'),
+    JsonCategoryInfo(name: '🎬 Comédia', file: 'comedia.json'),
+    JsonCategoryInfo(name: '🎬 Drama', file: 'drama.json'),
+    JsonCategoryInfo(name: '🎬 Terror', file: 'terror.json'),
+    JsonCategoryInfo(name: '🎬 Ficção Científica', file: 'ficcao-cientifica.json'),
+    JsonCategoryInfo(name: '🎬 Animação', file: 'animacao.json'),
+    JsonCategoryInfo(name: '🎬 Fantasia', file: 'fantasia.json'),
+    JsonCategoryInfo(name: '🎬 Aventura', file: 'aventura.json'),
+    JsonCategoryInfo(name: '🎬 Romance', file: 'romance.json'),
+    JsonCategoryInfo(name: '🎬 Suspense', file: 'suspense.json'),
+    JsonCategoryInfo(name: '🎬 Crime', file: 'crime.json'),
+    JsonCategoryInfo(name: '🎬 Documentário', file: 'documentario.json'),
+    JsonCategoryInfo(name: '🎬 Guerra', file: 'guerra.json'),
+    JsonCategoryInfo(name: '🎬 Faroeste', file: 'faroeste.json'),
+    JsonCategoryInfo(name: '🎬 Família', file: 'familia.json'),
+    JsonCategoryInfo(name: '🎬 Infantil', file: 'infantil.json'),
+    
+    // Séries e Novelas
+    JsonCategoryInfo(name: '📺 Doramas', file: 'doramas.json'),
+    JsonCategoryInfo(name: '📺 Novelas', file: 'novelas.json'),
+    JsonCategoryInfo(name: '📺 Novelas Turcas', file: 'novelas-turcas.json'),
+    JsonCategoryInfo(name: '📺 Programas de TV', file: 'programas-de-tv.json'),
+    
+    // Especiais
+    JsonCategoryInfo(name: '🎬 Legendados', file: 'legendados.json'),
+    JsonCategoryInfo(name: '📺 Legendadas', file: 'legendadas.json'),
+    JsonCategoryInfo(name: '🎬 Nacionais', file: 'nacionais.json'),
+    JsonCategoryInfo(name: '🇧🇷 Brasil Paralelo', file: 'brasil-paralelo.json'),
+    JsonCategoryInfo(name: '🎬 Cinema', file: 'cinema.json'),
+    JsonCategoryInfo(name: '🎬 Stand-up Comedy', file: 'stand-up-comedy.json'),
+    JsonCategoryInfo(name: '🎬 Shows', file: 'shows.json'),
+    JsonCategoryInfo(name: '⚽ Esportes', file: 'esportes.json'),
+    JsonCategoryInfo(name: '✝️ Religiosos', file: 'religiosos.json'),
+    JsonCategoryInfo(name: '📺 SBT', file: 'sbt.json'),
+    JsonCategoryInfo(name: '🎬 Outras Produtoras', file: 'outras-produtoras.json'),
+    JsonCategoryInfo(name: '🎬 Dublagem Não Oficial', file: 'dublagem-nao-oficial.json'),
+    
+    // Coleções
+    JsonCategoryInfo(name: '🦸 Marvel UCM', file: 'marvel-ucm.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Harry Potter', file: 'colecao-harry-potter.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Senhor dos Anéis', file: 'colecao-o-senhor-dos-aneis.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Homem-Aranha', file: 'colecao-homem-aranha.json'),
+    JsonCategoryInfo(name: '🎬 Coleção John Wick', file: 'colecao-jhon-wick.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Alien', file: 'colecao-alien.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Exterminador do Futuro', file: 'colecao-exterminador-do-futuro.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Mad Max', file: 'colecao-mad-max.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Jogos Vorazes', file: 'colecao-jogos-vorazes.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Jogos Mortais', file: 'colecao-jogos-mortais.json'),
+    JsonCategoryInfo(name: '🎬 Coleção MIB', file: 'colecao-mib-homens-de-preto.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Shrek', file: 'colecao-shrek.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Toy Story', file: 'colecao-toy-story.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Crepúsculo', file: 'colecao-crepusculo.json'),
+    JsonCategoryInfo(name: '🎬 Coleção American Pie', file: 'colecao-american-pie.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Todo Mundo em Pânico', file: 'colecao-todo-mundo-em-panico.json'),
+    JsonCategoryInfo(name: '🎬 Coleção Denzel Washington', file: 'colecao-denzel-washignton.json'),
+    
+    // Adultos (marcados como isAdult)
+    JsonCategoryInfo(name: '🔞 Adultos', file: 'adultos.json', isAdult: true),
+    JsonCategoryInfo(name: '🔞 Adultos - Bella da Semana', file: 'adultos-bella-da-semana.json', isAdult: true),
+    JsonCategoryInfo(name: '🔞 Adultos - Legendado', file: 'adultos-legendado.json', isAdult: true),
+  ];
 
   // === Cache ===
   List<JsonCategoryInfo>? _categoriesIndex;
   final Map<String, CategoryParseResult> _categoryCache = {};
   final List<String> _cacheOrder = []; // LRU order
   bool _isLoadingIndex = false;
+  
+  /// Diretório de cache local
+  Directory? _cacheDir;
 
   // === Stats ===
   int _totalMovies = 0;
@@ -100,7 +200,151 @@ class JsonCatalogService {
     RegExp(r'^(.+?)\s*(\d+)\s*x\s*(\d+)', caseSensitive: false),
   ];
 
-  /// Carrega o índice de categorias (leve)
+  // =====================================================
+  // === Métodos para carregar dados remotos ===
+  // =====================================================
+
+  /// Inicializa o diretório de cache local
+  Future<void> _initCacheDir() async {
+    if (_cacheDir != null) return;
+    
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      _cacheDir = Directory('${appDir.path}/json_cache');
+      if (!await _cacheDir!.exists()) {
+        await _cacheDir!.create(recursive: true);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Erro ao criar diretório de cache: $e');
+    }
+  }
+
+  /// Carrega dados JSON (do cache local ou da rede)
+  Future<String?> _loadJsonData(String url, String cacheFilename) async {
+    await _initCacheDir();
+    
+    // Tenta carregar do cache local primeiro
+    final cachedData = await _loadFromLocalCache(cacheFilename);
+    if (cachedData != null) {
+      debugPrint('📦 Cache local: $cacheFilename');
+      // Atualiza cache em background se estiver antigo
+      _refreshCacheInBackground(url, cacheFilename);
+      return cachedData;
+    }
+    
+    // Se não tem cache, baixa da rede
+    return await _loadFromNetwork(url, cacheFilename);
+  }
+
+  /// Carrega dados do cache local
+  Future<String?> _loadFromLocalCache(String filename) async {
+    if (_cacheDir == null) return null;
+    
+    try {
+      final file = File('${_cacheDir!.path}/$filename');
+      if (!await file.exists()) return null;
+      
+      // Verifica se o cache expirou
+      final stat = await file.stat();
+      final age = DateTime.now().difference(stat.modified);
+      if (age > _localCacheTTL) {
+        debugPrint('⏰ Cache expirado: $filename (${age.inDays} dias)');
+        return null;
+      }
+      
+      return await file.readAsString();
+    } catch (e) {
+      debugPrint('⚠️ Erro ao ler cache local: $e');
+      return null;
+    }
+  }
+
+  /// Carrega dados da rede
+  Future<String?> _loadFromNetwork(String url, String cacheFilename) async {
+    debugPrint('🌐 Baixando: $url');
+    
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+      ).timeout(_httpTimeout);
+      
+      if (response.statusCode == 200) {
+        final data = response.body;
+        
+        // Salva no cache local
+        await _saveToLocalCache(cacheFilename, data);
+        
+        debugPrint('✅ Baixado: $cacheFilename (${(data.length / 1024).toStringAsFixed(1)} KB)');
+        return data;
+      } else {
+        debugPrint('❌ Erro HTTP ${response.statusCode}: $url');
+        return null;
+      }
+    } on TimeoutException {
+      debugPrint('⏱️ Timeout ao baixar: $cacheFilename');
+      return null;
+    } catch (e) {
+      debugPrint('❌ Erro de rede: $e');
+      return null;
+    }
+  }
+
+  /// Salva dados no cache local
+  Future<void> _saveToLocalCache(String filename, String data) async {
+    if (_cacheDir == null) return;
+    
+    try {
+      final file = File('${_cacheDir!.path}/$filename');
+      await file.writeAsString(data);
+    } catch (e) {
+      debugPrint('⚠️ Erro ao salvar cache: $e');
+    }
+  }
+
+  /// Atualiza cache em background se estiver antigo
+  void _refreshCacheInBackground(String url, String filename) {
+    Future.microtask(() async {
+      if (_cacheDir == null) return;
+      
+      try {
+        final file = File('${_cacheDir!.path}/$filename');
+        if (!await file.exists()) return;
+        
+        final stat = await file.stat();
+        final age = DateTime.now().difference(stat.modified);
+        
+        // Se o cache tem mais de 1 dia, atualiza em background
+        if (age > const Duration(days: 1)) {
+          debugPrint('🔄 Atualizando cache em background: $filename');
+          await _loadFromNetwork(url, filename);
+        }
+      } catch (e) {
+        // Ignora erros em background
+      }
+    });
+  }
+
+  /// Limpa todo o cache local
+  Future<void> clearLocalCache() async {
+    await _initCacheDir();
+    if (_cacheDir == null) return;
+    
+    try {
+      if (await _cacheDir!.exists()) {
+        await _cacheDir!.delete(recursive: true);
+        await _cacheDir!.create(recursive: true);
+      }
+      debugPrint('🗑️ Cache local limpo');
+    } catch (e) {
+      debugPrint('⚠️ Erro ao limpar cache: $e');
+    }
+  }
+
+  /// Carrega o índice de categorias (lista estática)
   Future<List<JsonCategoryInfo>> loadCategoriesIndex() async {
     if (_categoriesIndex != null) {
       return _categoriesIndex!;
@@ -116,32 +360,27 @@ class JsonCatalogService {
     _isLoadingIndex = true;
 
     try {
-      debugPrint('📂 Carregando índice de categorias JSON...');
+      debugPrint('📂 Carregando índice de categorias...');
       final stopwatch = Stopwatch()..start();
 
-      final content = await rootBundle.loadString(_categoriesPath);
-      final data = jsonDecode(content) as List<dynamic>;
+      // Usa a lista estática de categorias disponíveis
+      _categoriesIndex = List.from(_availableCategories);
 
-      _categoriesIndex = data
-          .map((c) => JsonCategoryInfo.fromJson(c as Map<String, dynamic>))
-          .toList();
-
-      // Calcula totais
-      _totalMovies = 0;
-      _totalSeries = 0;
-      for (final cat in _categoriesIndex!) {
-        if (cat.name.contains('📺') || cat.name.toLowerCase().contains('series') || 
-            cat.name.toLowerCase().contains('novela') || cat.name.toLowerCase().contains('dorama')) {
-          _totalSeries += cat.count;
-        } else {
-          _totalMovies += cat.count;
-        }
-      }
+      // Calcula totais estimados
+      _totalMovies = _categoriesIndex!.where((cat) => 
+          !cat.name.contains('📺') && 
+          !cat.name.toLowerCase().contains('novela') && 
+          !cat.name.toLowerCase().contains('dorama')).length * 500; // Estimativa
+      
+      _totalSeries = _categoriesIndex!.where((cat) => 
+          cat.name.contains('📺') || 
+          cat.name.toLowerCase().contains('novela') || 
+          cat.name.toLowerCase().contains('dorama')).length * 200; // Estimativa
 
       stopwatch.stop();
       debugPrint('✅ Índice carregado em ${stopwatch.elapsedMilliseconds}ms');
       debugPrint('   📁 ${_categoriesIndex!.length} categorias');
-      debugPrint('   🎬 $_totalMovies filmes, 📺 $_totalSeries séries');
+      debugPrint('   🎬 ~$_totalMovies filmes, 📺 ~$_totalSeries séries (estimado)');
 
       return _categoriesIndex!;
     } catch (e, stack) {
@@ -154,11 +393,11 @@ class JsonCatalogService {
     }
   }
 
-  /// Carrega uma categoria específica (lazy loading)
+  /// Carrega uma categoria específica (lazy loading) do servidor remoto
   Future<CategoryParseResult?> loadCategory(String categoryFile, {bool includeAdult = false}) async {
     final cacheKey = categoryFile;
     
-    // Verifica cache
+    // Verifica cache em memória
     if (_categoryCache.containsKey(cacheKey)) {
       _updateLRU(cacheKey);
       debugPrint('📦 Cache hit: $cacheKey');
@@ -169,7 +408,12 @@ class JsonCatalogService {
     final stopwatch = Stopwatch()..start();
 
     try {
-      final content = await rootBundle.loadString('$_jsonPath/$categoryFile');
+      final url = '$_remoteBaseUrl/$categoryFile';
+      final content = await _loadJsonData(url, categoryFile);
+      
+      if (content == null || content.isEmpty) {
+        throw Exception('Dados vazios para categoria: $categoryFile');
+      }
       
       // Parse em isolate
       final result = await compute(_parseCategoryInIsolate, content);

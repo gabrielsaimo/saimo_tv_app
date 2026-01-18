@@ -69,5 +69,5 @@ flutter:
   assets:
     - assets/icons/
     - assets/images/
-    - json/
-    - json/enriched/
+    - json/categories.json
+    # Dados de filmes/séries são carregados remotamente do GitHub

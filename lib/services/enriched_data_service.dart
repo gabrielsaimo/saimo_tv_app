@@ -1,21 +1,36 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import '../models/enriched_movie.dart';
 
 /// Serviço de dados enriquecidos do TMDB
 /// 
-/// Este serviço carrega dados pré-processados dos arquivos JSON enriched,
-/// evitando chamadas à API do TMDB em tempo real.
+/// Este serviço carrega dados pré-processados dos arquivos JSON enriched
+/// de uma fonte remota (GitHub), evitando chamadas à API do TMDB em tempo real.
+/// Os dados são cacheados localmente para uso offline.
 class EnrichedDataService {
   static final EnrichedDataService _instance = EnrichedDataService._internal();
   factory EnrichedDataService() => _instance;
   EnrichedDataService._internal();
 
   // === Configurações ===
-  static const String _enrichedPath = 'json/enriched';
+  /// URL base para carregar dados remotamente do GitHub
+  static const String _remoteBaseUrl = 
+      'https://raw.githubusercontent.com/gabrielsaimo/free-tv/main/public/data/enriched';
+  
+  /// Timeout para requisições HTTP
+  static const Duration _httpTimeout = Duration(seconds: 30);
+  
+  /// Tempo de cache local (7 dias)
+  static const Duration _localCacheTTL = Duration(days: 7);
+  
   static const int _maxCategoriesInMemory = 10;
+  
+  /// Diretório de cache local
+  Directory? _cacheDir;
 
   // === Cache ===
   final Map<String, List<EnrichedMovie>> _dataCache = {};
@@ -89,7 +104,11 @@ class EnrichedDataService {
 
   /// Lista de categorias disponíveis
   static const List<EnrichedCategoryInfo> enrichedCategories = [
+    // Lançamentos e Destaques
     EnrichedCategoryInfo(name: '🎬 Lançamentos', file: 'lancamentos.json'),
+    EnrichedCategoryInfo(name: '⭐ Sugestão da Semana', file: 'sugestao-da-semana.json'),
+    
+    // Streaming Platforms
     EnrichedCategoryInfo(name: '📺 Netflix', file: 'netflix.json'),
     EnrichedCategoryInfo(name: '📺 Prime Video', file: 'prime-video.json'),
     EnrichedCategoryInfo(name: '📺 Disney+', file: 'disney.json'),
@@ -101,6 +120,15 @@ class EnrichedDataService {
     EnrichedCategoryInfo(name: '📺 Crunchyroll', file: 'crunchyroll.json'),
     EnrichedCategoryInfo(name: '📺 Funimation', file: 'funimation.json'),
     EnrichedCategoryInfo(name: '📺 Discovery+', file: 'discovery.json'),
+    EnrichedCategoryInfo(name: '📺 AMC+', file: 'amc-plus.json'),
+    EnrichedCategoryInfo(name: '📺 Claro Video', file: 'claro-video.json'),
+    EnrichedCategoryInfo(name: '📺 Play Plus', file: 'play-plus.json'),
+    EnrichedCategoryInfo(name: '📺 Pluto TV', file: 'plutotv.json'),
+    EnrichedCategoryInfo(name: '📺 Lionsgate+', file: 'lionsgate.json'),
+    EnrichedCategoryInfo(name: '📺 Univer', file: 'univer.json'),
+    EnrichedCategoryInfo(name: '📺 DirectTV', file: 'directv.json'),
+    
+    // Gêneros
     EnrichedCategoryInfo(name: '🎬 4K UHD', file: '4k-uhd.json'),
     EnrichedCategoryInfo(name: '🎬 Ação', file: 'acao.json'),
     EnrichedCategoryInfo(name: '🎬 Comédia', file: 'comedia.json'),
@@ -114,12 +142,49 @@ class EnrichedDataService {
     EnrichedCategoryInfo(name: '🎬 Suspense', file: 'suspense.json'),
     EnrichedCategoryInfo(name: '🎬 Crime', file: 'crime.json'),
     EnrichedCategoryInfo(name: '🎬 Documentário', file: 'documentario.json'),
+    EnrichedCategoryInfo(name: '🎬 Guerra', file: 'guerra.json'),
+    EnrichedCategoryInfo(name: '🎬 Faroeste', file: 'faroeste.json'),
+    EnrichedCategoryInfo(name: '🎬 Família', file: 'familia.json'),
+    EnrichedCategoryInfo(name: '🎬 Infantil', file: 'infantil.json'),
+    
+    // Séries e Novelas
     EnrichedCategoryInfo(name: '📺 Doramas', file: 'doramas.json'),
     EnrichedCategoryInfo(name: '📺 Novelas', file: 'novelas.json'),
+    EnrichedCategoryInfo(name: '📺 Novelas Turcas', file: 'novelas-turcas.json'),
+    EnrichedCategoryInfo(name: '📺 Programas de TV', file: 'programas-de-tv.json'),
+    
+    // Especiais
     EnrichedCategoryInfo(name: '🎬 Legendados', file: 'legendados.json'),
     EnrichedCategoryInfo(name: '📺 Legendadas', file: 'legendadas.json'),
     EnrichedCategoryInfo(name: '🎬 Nacionais', file: 'nacionais.json'),
     EnrichedCategoryInfo(name: '🇧🇷 Brasil Paralelo', file: 'brasil-paralelo.json'),
+    EnrichedCategoryInfo(name: '🎬 Cinema', file: 'cinema.json'),
+    EnrichedCategoryInfo(name: '🎬 Stand-up Comedy', file: 'stand-up-comedy.json'),
+    EnrichedCategoryInfo(name: '🎬 Shows', file: 'shows.json'),
+    EnrichedCategoryInfo(name: '⚽ Esportes', file: 'esportes.json'),
+    EnrichedCategoryInfo(name: '✝️ Religiosos', file: 'religiosos.json'),
+    EnrichedCategoryInfo(name: '📺 SBT', file: 'sbt.json'),
+    EnrichedCategoryInfo(name: '🎬 Outras Produtoras', file: 'outras-produtoras.json'),
+    EnrichedCategoryInfo(name: '🎬 Dublagem Não Oficial', file: 'dublagem-nao-oficial.json'),
+    
+    // Coleções
+    EnrichedCategoryInfo(name: '🦸 Marvel UCM', file: 'marvel-ucm.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Harry Potter', file: 'colecao-harry-potter.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Senhor dos Anéis', file: 'colecao-o-senhor-dos-aneis.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Homem-Aranha', file: 'colecao-homem-aranha.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção John Wick', file: 'colecao-jhon-wick.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Alien', file: 'colecao-alien.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Exterminador do Futuro', file: 'colecao-exterminador-do-futuro.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Mad Max', file: 'colecao-mad-max.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Jogos Vorazes', file: 'colecao-jogos-vorazes.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Jogos Mortais', file: 'colecao-jogos-mortais.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção MIB', file: 'colecao-mib-homens-de-preto.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Shrek', file: 'colecao-shrek.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Toy Story', file: 'colecao-toy-story.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Crepúsculo', file: 'colecao-crepusculo.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção American Pie', file: 'colecao-american-pie.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Todo Mundo em Pânico', file: 'colecao-todo-mundo-em-panico.json'),
+    EnrichedCategoryInfo(name: '🎬 Coleção Denzel Washington', file: 'colecao-denzel-washignton.json'),
   ];
 
   /// Retorna todas as categorias (com ou sem adulto)
@@ -189,9 +254,9 @@ class EnrichedDataService {
     debugPrint('✅ Todas as categorias carregadas!');
   }
 
-  /// Carrega uma categoria de dados enriched
+  /// Carrega uma categoria de dados enriched (da rede ou cache local)
   Future<List<EnrichedMovie>> loadEnrichedCategory(String categoryName) async {
-    // Verifica cache primeiro
+    // Verifica cache em memória primeiro
     if (_dataCache.containsKey(categoryName)) {
       _updateCacheLRU(categoryName);
       return _dataCache[categoryName]!;
@@ -203,7 +268,13 @@ class EnrichedDataService {
             .firstWhere((c) => c.name == categoryName, orElse: () => throw Exception('Categoria não encontrada: $categoryName')));
 
     try {
-      final jsonString = await rootBundle.loadString('$_enrichedPath/${category.file}');
+      // Tenta carregar do cache local ou da rede
+      final jsonString = await _loadJsonData(category.file);
+      if (jsonString == null || jsonString.isEmpty) {
+        debugPrint('❌ Dados vazios para categoria "$categoryName"');
+        return [];
+      }
+      
       final List<dynamic> jsonData = json.decode(jsonString);
 
       final List<EnrichedMovie> movies = [];
@@ -303,6 +374,161 @@ class EnrichedDataService {
       final oldest = _cacheOrder.removeAt(0);
       _dataCache.remove(oldest);
       debugPrint('🗑️  Cache LRU: removida categoria "$oldest"');
+    }
+  }
+
+  // =====================================================
+  // === Métodos para carregar dados remotos ===
+  // =====================================================
+
+  /// Inicializa o diretório de cache local
+  Future<void> _initCacheDir() async {
+    if (_cacheDir != null) return;
+    
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      _cacheDir = Directory('${appDir.path}/enriched_cache');
+      if (!await _cacheDir!.exists()) {
+        await _cacheDir!.create(recursive: true);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Erro ao criar diretório de cache: $e');
+    }
+  }
+
+  /// Carrega dados JSON (do cache local ou da rede)
+  Future<String?> _loadJsonData(String filename) async {
+    await _initCacheDir();
+    
+    // Tenta carregar do cache local primeiro
+    final cachedData = await _loadFromLocalCache(filename);
+    if (cachedData != null) {
+      debugPrint('📦 Cache local: $filename');
+      // Atualiza cache em background se estiver antigo
+      _refreshCacheInBackground(filename);
+      return cachedData;
+    }
+    
+    // Se não tem cache, baixa da rede
+    return await _loadFromNetwork(filename);
+  }
+
+  /// Carrega dados do cache local
+  Future<String?> _loadFromLocalCache(String filename) async {
+    if (_cacheDir == null) return null;
+    
+    try {
+      final file = File('${_cacheDir!.path}/$filename');
+      if (!await file.exists()) return null;
+      
+      // Verifica se o cache expirou
+      final stat = await file.stat();
+      final age = DateTime.now().difference(stat.modified);
+      if (age > _localCacheTTL) {
+        debugPrint('⏰ Cache expirado: $filename (${age.inDays} dias)');
+        return null;
+      }
+      
+      return await file.readAsString();
+    } catch (e) {
+      debugPrint('⚠️ Erro ao ler cache local: $e');
+      return null;
+    }
+  }
+
+  /// Carrega dados da rede
+  Future<String?> _loadFromNetwork(String filename) async {
+    final url = '$_remoteBaseUrl/$filename';
+    debugPrint('🌐 Baixando: $url');
+    
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+      ).timeout(_httpTimeout);
+      
+      if (response.statusCode == 200) {
+        final data = response.body;
+        
+        // Salva no cache local
+        await _saveToLocalCache(filename, data);
+        
+        debugPrint('✅ Baixado: $filename (${(data.length / 1024).toStringAsFixed(1)} KB)');
+        return data;
+      } else {
+        debugPrint('❌ Erro HTTP ${response.statusCode}: $url');
+        return null;
+      }
+    } on TimeoutException {
+      debugPrint('⏱️ Timeout ao baixar: $filename');
+      return null;
+    } catch (e) {
+      debugPrint('❌ Erro de rede: $e');
+      return null;
+    }
+  }
+
+  /// Salva dados no cache local
+  Future<void> _saveToLocalCache(String filename, String data) async {
+    if (_cacheDir == null) return;
+    
+    try {
+      final file = File('${_cacheDir!.path}/$filename');
+      await file.writeAsString(data);
+    } catch (e) {
+      debugPrint('⚠️ Erro ao salvar cache: $e');
+    }
+  }
+
+  /// Atualiza cache em background se estiver antigo
+  void _refreshCacheInBackground(String filename) {
+    // Atualiza em background sem bloquear
+    Future.microtask(() async {
+      if (_cacheDir == null) return;
+      
+      try {
+        final file = File('${_cacheDir!.path}/$filename');
+        if (!await file.exists()) return;
+        
+        final stat = await file.stat();
+        final age = DateTime.now().difference(stat.modified);
+        
+        // Se o cache tem mais de 1 dia, atualiza em background
+        if (age > const Duration(days: 1)) {
+          debugPrint('🔄 Atualizando cache em background: $filename');
+          await _loadFromNetwork(filename);
+        }
+      } catch (e) {
+        // Ignora erros em background
+      }
+    });
+  }
+
+  /// Limpa todo o cache local
+  Future<void> clearLocalCache() async {
+    await _initCacheDir();
+    if (_cacheDir == null) return;
+    
+    try {
+      if (await _cacheDir!.exists()) {
+        await _cacheDir!.delete(recursive: true);
+        await _cacheDir!.create(recursive: true);
+      }
+      debugPrint('🗑️ Cache local limpo');
+    } catch (e) {
+      debugPrint('⚠️ Erro ao limpar cache: $e');
+    }
+  }
+
+  /// Pré-carrega categorias prioritárias
+  Future<void> preloadPriorityCategories() async {
+    const priority = ['lancamentos.json', 'netflix.json', 'prime-video.json'];
+    
+    for (final file in priority) {
+      await _loadFromNetwork(file);
     }
   }
 

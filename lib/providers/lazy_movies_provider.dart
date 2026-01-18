@@ -625,9 +625,16 @@ class LazyMoviesProvider with ChangeNotifier {
       _showAdultContent = await storage.isAdultModeUnlocked();
       
       // Carrega índice (apenas ~5KB)
+      debugPrint('🚀 Iniciando carregamento do índice de categorias...');
       _categories = await _service.loadCategoryIndex();
       
       debugPrint('📂 Índice carregado: ${_categories.length} categorias');
+      if (_categories.isNotEmpty) {
+        debugPrint('📂 Primeira categoria: ${_categories.first.name} (${_categories.first.id})');
+        debugPrint('📂 Última categoria: ${_categories.last.name} (${_categories.last.id})');
+      } else {
+        debugPrint('⚠️ ALERTA: Nenhuma categoria foi carregada!');
+      }
     } catch (e) {
       _indexError = 'Erro ao carregar catálogo: $e';
       debugPrint('❌ $_indexError');
@@ -985,11 +992,13 @@ class LazyMoviesProvider with ChangeNotifier {
     
     try {
       debugPrint('🔍 Iniciando busca global por: "$query"');
+      debugPrint('🔍 Total de categorias disponíveis: ${_categories.length}');
       
       final lower = query.toLowerCase();
       final foundMovies = <Movie>[];
       final foundSeries = <Movie>[];
       final seenIds = <String>{};
+      int categoriesSearched = 0;
       
       // Busca em todas as categorias
       for (final cat in _categories) {
@@ -998,8 +1007,15 @@ class LazyMoviesProvider with ChangeNotifier {
         
         try {
           // Carrega categoria
+          debugPrint('🔍 Buscando em: ${cat.name} (${cat.id})');
           final data = await _service.loadCategory(cat.id);
-          if (data == null) continue;
+          if (data == null) {
+            debugPrint('⚠️ Categoria ${cat.id} retornou null');
+            continue;
+          }
+          
+          categoriesSearched++;
+          debugPrint('📂 ${cat.name}: ${data.movies.length} filmes, ${data.series.length} séries');
           
           // Busca em filmes
           for (final movie in data.movies) {
