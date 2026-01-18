@@ -45,6 +45,8 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
   Episode? _nextEpisode;
   int? _nextSeason;
   bool _isLastEpisode = false;
+  int _autoPlayCountdown = 10; // Segundos para auto-play
+  Timer? _autoPlayTimer;
 
   @override
   void initState() {
@@ -95,6 +97,7 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
     _hideControlsTimer?.cancel();
     _progressTimer?.cancel();
     _saveProgressTimer?.cancel();
+    _autoPlayTimer?.cancel();
     _mainFocusNode.dispose();
     _nextEpisodeFocusNode.dispose();
     super.dispose();
@@ -338,6 +341,9 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
       // Calcula o próximo episódio quando for mostrar o botão
       if (shouldShow) {
         _calculateNextEpisode();
+        _startAutoPlayTimer();
+      } else {
+        _cancelAutoPlayTimer();
       }
       
       setState(() {
@@ -350,6 +356,37 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
         }
       });
     }
+  }
+  
+  /// Inicia o timer de auto-play
+  void _startAutoPlayTimer() {
+    _cancelAutoPlayTimer();
+    _autoPlayCountdown = 10;
+    
+    _autoPlayTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      setState(() {
+        _autoPlayCountdown--;
+      });
+      
+      // Auto-play quando chega a 0
+      if (_autoPlayCountdown <= 0) {
+        timer.cancel();
+        if (_nextEpisode != null && !_isLastEpisode) {
+          _goToNextEpisode();
+        }
+      }
+    });
+  }
+  
+  /// Cancela o timer de auto-play
+  void _cancelAutoPlayTimer() {
+    _autoPlayTimer?.cancel();
+    _autoPlayTimer = null;
   }
   
   /// Calcula qual é o próximo episódio
@@ -595,9 +632,14 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
   void _goBack() {
     _saveProgress();
     
-    // Sempre volta para /movies de forma segura
-    // Não usa pop() pois a stack pode estar vazia devido ao uso de pushReplacementNamed
-    Navigator.of(context).pushReplacementNamed('/movies');
+    // Usa pop() para voltar para a tela anterior (modal do filme/série)
+    // Isso preserva o estado da navegação
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      // Se não pode dar pop (stack vazia), vai para o catálogo
+      Navigator.of(context).pushReplacementNamed('/movies');
+    }
   }
 
   @override
@@ -728,6 +770,7 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
     final isLastEp = _isLastEpisode;
     final nextSeasonNum = _nextSeason ?? 1;
     final nextEpNum = _nextEpisode?.episode ?? 1;
+    final showCountdown = _autoPlayTimer != null && _autoPlayCountdown > 0 && !isLastEp;
     
     String buttonText;
     String subtitleText;
@@ -738,7 +781,7 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
       subtitleText = 'S${nextSeasonNum.toString().padLeft(2, '0')}E${nextEpNum.toString().padLeft(2, '0')}';
       buttonIcon = Icons.replay_rounded;
     } else {
-      buttonText = 'Próximo Episódio';
+      buttonText = showCountdown ? 'Próximo em ${_autoPlayCountdown}s' : 'Próximo Episódio';
       subtitleText = 'S${nextSeasonNum.toString().padLeft(2, '0')}E${nextEpNum.toString().padLeft(2, '0')} • ${_nextEpisode?.name ?? ''}';
       buttonIcon = Icons.skip_next_rounded;
     }
@@ -755,7 +798,7 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
           child: GestureDetector(
             onTap: _goToNextEpisode,
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 300),
+              constraints: const BoxConstraints(maxWidth: 340),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -783,19 +826,36 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: _isNextEpisodeButtonFocused
-                          ? Colors.white.withOpacity(0.2)
-                          : SaimoTheme.primary.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      buttonIcon,
-                      color: Colors.white,
-                      size: 24,
-                    ),
+                  // Ícone com countdown circular
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (showCountdown)
+                        SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: CircularProgressIndicator(
+                            value: _autoPlayCountdown / 10,
+                            strokeWidth: 3,
+                            backgroundColor: Colors.white.withOpacity(0.2),
+                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFE50914)),
+                          ),
+                        ),
+                      Container(
+                        padding: EdgeInsets.all(showCountdown ? 6 : 8),
+                        decoration: BoxDecoration(
+                          color: _isNextEpisodeButtonFocused
+                              ? Colors.white.withOpacity(0.2)
+                              : SaimoTheme.primary.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          buttonIcon,
+                          color: Colors.white,
+                          size: showCountdown ? 20 : 24,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(width: 14),
                   Flexible(
@@ -832,9 +892,9 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
                         color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'OK',
-                        style: TextStyle(
+                      child: Text(
+                        showCountdown ? 'Pular' : 'OK',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: TVConstants.fontXS,
                           fontWeight: FontWeight.bold,

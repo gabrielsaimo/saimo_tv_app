@@ -180,6 +180,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       provider.selectCategory(cats[_modalIndex]);
       setState(() {
         _showCategoryModal = false;
+        _showingFavorites = false; // Sai do modo favoritos ao selecionar categoria
         _contentRow = 0;
         _contentCol = 0;
       });

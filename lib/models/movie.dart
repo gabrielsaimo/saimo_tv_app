@@ -145,6 +145,43 @@ class TMDBData {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      if (id != null) 'id': id,
+      if (imdbId != null) 'imdbId': imdbId,
+      if (title != null) 'title': title,
+      if (originalTitle != null) 'originalTitle': originalTitle,
+      if (tagline != null) 'tagline': tagline,
+      if (overview != null) 'overview': overview,
+      if (status != null) 'status': status,
+      if (language != null) 'language': language,
+      if (releaseDate != null) 'releaseDate': releaseDate,
+      if (firstAirDate != null) 'firstAirDate': firstAirDate,
+      if (lastAirDate != null) 'lastAirDate': lastAirDate,
+      if (year != null) 'year': year,
+      if (runtime != null) 'runtime': runtime,
+      if (episodeRuntime != null) 'episodeRuntime': episodeRuntime,
+      if (rating != null) 'rating': rating,
+      if (voteCount != null) 'voteCount': voteCount,
+      if (popularity != null) 'popularity': popularity,
+      if (certification != null) 'certification': certification,
+      if (genres != null) 'genres': genres,
+      if (poster != null) 'poster': poster,
+      if (posterHD != null) 'posterHD': posterHD,
+      if (backdrop != null) 'backdrop': backdrop,
+      if (backdropHD != null) 'backdropHD': backdropHD,
+      if (logo != null) 'logo': logo,
+      if (cast != null) 'cast': cast!.map((c) => {
+        'id': c.id,
+        'name': c.name,
+        if (c.character != null) 'character': c.character,
+        if (c.photo != null) 'photo': c.photo,
+      }).toList(),
+      if (creators != null) 'creators': creators,
+      if (keywords != null) 'keywords': keywords,
+    };
+  }
+
   /// Duração formatada
   String get formattedRuntime {
     final mins = runtime ?? episodeRuntime;
@@ -282,6 +319,7 @@ class Movie {
       'episode': episode,
       'totalEpisodes': totalEpisodes,
       'totalSeasons': totalSeasons,
+      if (tmdb != null) 'tmdb': tmdb!.toJson(),
     };
   }
 
