@@ -6,6 +6,7 @@ import '../providers/channels_provider.dart';
 import '../providers/epg_provider.dart';
 import '../providers/player_provider.dart';
 import '../utils/theme.dart';
+import '../utils/tv_constants.dart';
 
 /// Tela do Guia de Programação (EPG) - Otimizada para TV/Fire TV
 class GuideScreen extends StatefulWidget {
@@ -96,6 +97,7 @@ class _GuideScreenState extends State<GuideScreen> {
 
     switch (event.logicalKey) {
       case LogicalKeyboardKey.arrowUp:
+        HapticFeedback.selectionClick();
         setState(() {
           _selectedChannelIndex = (_selectedChannelIndex - 1).clamp(0, totalChannels - 1);
         });
@@ -103,6 +105,7 @@ class _GuideScreenState extends State<GuideScreen> {
         break;
         
       case LogicalKeyboardKey.arrowDown:
+        HapticFeedback.selectionClick();
         setState(() {
           _selectedChannelIndex = (_selectedChannelIndex + 1).clamp(0, totalChannels - 1);
         });
@@ -110,6 +113,7 @@ class _GuideScreenState extends State<GuideScreen> {
         break;
         
       case LogicalKeyboardKey.arrowLeft:
+        HapticFeedback.selectionClick();
         setState(() {
           _selectedHourOffset = (_selectedHourOffset - 1).clamp(-12, 12);
         });
@@ -117,6 +121,7 @@ class _GuideScreenState extends State<GuideScreen> {
         break;
         
       case LogicalKeyboardKey.arrowRight:
+        HapticFeedback.selectionClick();
         setState(() {
           _selectedHourOffset = (_selectedHourOffset + 1).clamp(-12, 12);
         });
@@ -125,11 +130,14 @@ class _GuideScreenState extends State<GuideScreen> {
         
       case LogicalKeyboardKey.enter:
       case LogicalKeyboardKey.select:
+      case LogicalKeyboardKey.gameButtonA:
+        HapticFeedback.mediumImpact();
         _playSelectedChannel();
         break;
         
       case LogicalKeyboardKey.escape:
       case LogicalKeyboardKey.goBack:
+        HapticFeedback.lightImpact();
         Navigator.of(context).pop();
         break;
     }
@@ -240,7 +248,7 @@ class _GuideScreenState extends State<GuideScreen> {
             key,
             style: const TextStyle(
               color: SaimoTheme.primary,
-              fontSize: 13,
+              fontSize: TVConstants.fontM,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -248,7 +256,7 @@ class _GuideScreenState extends State<GuideScreen> {
         const SizedBox(width: 6),
         Text(
           label,
-          style: const TextStyle(color: SaimoTheme.textSecondary, fontSize: 13),
+          style: const TextStyle(color: SaimoTheme.textSecondary, fontSize: TVConstants.fontM),
         ),
       ],
     );
@@ -548,7 +556,7 @@ class _GuideScreenState extends State<GuideScreen> {
                                       'ATUAL',
                                       style: TextStyle(
                                         color: Colors.white,
-                                        fontSize: 11,
+                                        fontSize: TVConstants.fontS,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),

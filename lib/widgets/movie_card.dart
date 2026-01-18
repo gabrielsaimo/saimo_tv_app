@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/movie.dart';
 import '../utils/theme.dart';
+import '../utils/tv_constants.dart';
 
 /// Card de filme/série para o catálogo
 class MovieCard extends StatefulWidget {
@@ -61,7 +62,7 @@ class _MovieCardState extends State<MovieCard> with SingleTickerProviderStateMix
     return GestureDetector(
       onTap: widget.onTap,
       onLongPress: widget.onLongPress,
-      child: AnimatedBuilder(
+      child: TVAnimatedBuilder(
         animation: _scaleController,
         builder: (context, child) {
           return Transform.scale(
@@ -70,21 +71,21 @@ class _MovieCardState extends State<MovieCard> with SingleTickerProviderStateMix
           );
         },
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+          duration: TVConstants.animNormal,
           width: widget.width,
           height: widget.height,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(TVConstants.radiusM),
             border: Border.all(
               color: widget.isFocused
-                  ? SaimoTheme.primary
+                  ? TVConstants.focusColor
                   : Colors.transparent,
-              width: widget.isFocused ? 3 : 0,
+              width: widget.isFocused ? TVConstants.focusBorderWidth : 0,
             ),
             boxShadow: widget.isFocused
                 ? [
                     BoxShadow(
-                      color: SaimoTheme.primary.withOpacity(0.4),
+                      color: TVConstants.focusColor.withOpacity(0.4),
                       blurRadius: 20,
                       spreadRadius: 2,
                     ),
@@ -127,9 +128,9 @@ class _MovieCardState extends State<MovieCard> with SingleTickerProviderStateMix
 
                 // Informações
                 Positioned(
-                  bottom: 8,
-                  left: 8,
-                  right: 8,
+                  bottom: TVConstants.paddingS,
+                  left: TVConstants.paddingS,
+                  right: TVConstants.paddingS,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -137,32 +138,32 @@ class _MovieCardState extends State<MovieCard> with SingleTickerProviderStateMix
                       // Rating TMDB e Ano
                       if (widget.movie.rating != null || widget.movie.year != null)
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
+                          padding: const EdgeInsets.only(bottom: 6),
                           child: Row(
                             children: [
                               if (widget.movie.rating != null) ...[
                                 const Icon(
                                   Icons.star,
                                   color: Colors.amber,
-                                  size: 12,
+                                  size: TVConstants.fontS,
                                 ),
-                                const SizedBox(width: 2),
+                                const SizedBox(width: 4),
                                 Text(
                                   widget.movie.ratingText,
                                   style: const TextStyle(
                                     color: Colors.amber,
-                                    fontSize: 11,
+                                    fontSize: TVConstants.fontXS,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                const SizedBox(width: 6),
+                                const SizedBox(width: 8),
                               ],
                               if (widget.movie.year != null)
                                 Text(
                                   widget.movie.year!,
                                   style: TextStyle(
-                                    color: Colors.white.withOpacity(0.7),
-                                    fontSize: 10,
+                                    color: Colors.white.withOpacity(TVConstants.textSecondaryOpacity),
+                                    fontSize: TVConstants.fontXS,
                                   ),
                                 ),
                             ],
@@ -176,12 +177,12 @@ class _MovieCardState extends State<MovieCard> with SingleTickerProviderStateMix
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 13,
+                          fontSize: TVConstants.fontS,
                           fontWeight: FontWeight.w600,
                           height: 1.2,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       
                       // Tag de episódio ou categoria
                       Row(
@@ -189,23 +190,23 @@ class _MovieCardState extends State<MovieCard> with SingleTickerProviderStateMix
                           if (widget.movie.episodeTag != null) ...[
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
+                                horizontal: TVConstants.paddingS,
+                                vertical: 4,
                               ),
                               decoration: BoxDecoration(
                                 color: SaimoTheme.primary,
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(TVConstants.radiusS),
                               ),
                               child: Text(
                                 widget.movie.episodeTag!,
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontSize: 10,
+                                  fontSize: TVConstants.fontXS,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 6),
                           ],
                           Expanded(
                             child: Text(
@@ -213,8 +214,8 @@ class _MovieCardState extends State<MovieCard> with SingleTickerProviderStateMix
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.6),
-                                fontSize: 11,
+                                color: Colors.white.withOpacity(TVConstants.textSecondaryOpacity),
+                                fontSize: TVConstants.fontXS,
                               ),
                             ),
                           ),
@@ -384,7 +385,7 @@ class _SeriesCardState extends State<SeriesCard> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: widget.onTap,
-      child: AnimatedBuilder(
+      child: TVAnimatedBuilder(
         animation: _scaleController,
         builder: (context, child) {
           return Transform.scale(
@@ -393,21 +394,21 @@ class _SeriesCardState extends State<SeriesCard> with SingleTickerProviderStateM
           );
         },
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+          duration: TVConstants.animNormal,
           width: widget.width,
           height: widget.height,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(TVConstants.radiusM),
             border: Border.all(
               color: widget.isFocused
-                  ? const Color(0xFF8B5CF6)
+                  ? TVConstants.focusColor
                   : Colors.transparent,
-              width: widget.isFocused ? 3 : 0,
+              width: widget.isFocused ? TVConstants.focusBorderWidth : 0,
             ),
             boxShadow: widget.isFocused
                 ? [
                     BoxShadow(
-                      color: const Color(0xFF8B5CF6).withOpacity(0.4),
+                      color: TVConstants.focusColor.withOpacity(0.4),
                       blurRadius: 20,
                       spreadRadius: 2,
                     ),
@@ -421,7 +422,7 @@ class _SeriesCardState extends State<SeriesCard> with SingleTickerProviderStateM
                   ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(widget.isFocused ? 9 : 12),
+            borderRadius: BorderRadius.circular(widget.isFocused ? 9 : TVConstants.radiusM),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -450,9 +451,9 @@ class _SeriesCardState extends State<SeriesCard> with SingleTickerProviderStateM
 
                 // Informações
                 Positioned(
-                  bottom: 8,
-                  left: 8,
-                  right: 8,
+                  bottom: TVConstants.paddingS,
+                  left: TVConstants.paddingS,
+                  right: TVConstants.paddingS,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -464,56 +465,56 @@ class _SeriesCardState extends State<SeriesCard> with SingleTickerProviderStateM
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 13,
+                          fontSize: TVConstants.fontS,
                           fontWeight: FontWeight.w600,
                           height: 1.2,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
 
                       // Temporadas e episódios
                       Row(
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
+                              horizontal: TVConstants.paddingS,
+                              vertical: 4,
                             ),
                             decoration: BoxDecoration(
                               color: const Color(0xFF8B5CF6),
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(TVConstants.radiusS),
                             ),
                             child: Text(
                               '${widget.series.seasonCount}T',
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 10,
+                                fontSize: TVConstants.fontXS,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
+                              horizontal: TVConstants.paddingS,
+                              vertical: 4,
                             ),
                             decoration: BoxDecoration(
                               color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(TVConstants.radiusS),
                             ),
                             child: Text(
                               '${widget.series.episodeCount} eps',
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 10,
+                                fontSize: TVConstants.fontXS,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
 
                       // Categoria
                       Text(
@@ -521,8 +522,8 @@ class _SeriesCardState extends State<SeriesCard> with SingleTickerProviderStateM
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.6),
-                          fontSize: 11,
+                          color: Colors.white.withOpacity(TVConstants.textSecondaryOpacity),
+                          fontSize: TVConstants.fontXS,
                         ),
                       ),
                     ],

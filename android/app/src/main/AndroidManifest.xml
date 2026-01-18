@@ -7,6 +7,9 @@
     <!-- Permissão para manter a tela ligada durante reprodução de vídeo -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     
+    <!-- Permissões de áudio para TV (necessário para controle de volume em TVs) -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    
     <!-- Recurso Leanback para Android TV -->
     <uses-feature android:name="android.software.leanback" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
@@ -16,7 +19,8 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/banner"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

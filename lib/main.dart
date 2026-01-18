@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'app.dart';
 import 'providers/channels_provider.dart';
 import 'providers/favorites_provider.dart';
+import 'providers/movie_favorites_provider.dart';
 import 'providers/epg_provider.dart';
 import 'providers/player_provider.dart';
 import 'providers/settings_provider.dart';
@@ -40,6 +41,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => SettingsProvider()..loadSettings()),
         ChangeNotifierProvider(create: (_) => FavoritesProvider()..loadFavorites()),
+        ChangeNotifierProvider(create: (_) => MovieFavoritesProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => ChannelsProvider()),
         ChangeNotifierProvider(create: (_) => EpgProvider()),
         ChangeNotifierProvider(create: (_) => PlayerProvider()),

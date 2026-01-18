@@ -4,6 +4,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../models/movie.dart';
 import '../providers/lazy_movies_provider.dart';
+import '../providers/movie_favorites_provider.dart';
+import '../utils/tv_constants.dart';
+import '../utils/key_debouncer.dart';
 import 'series_detail_modal.dart';
 
 /// Modal completo de detalhes de filme/série com todas as informações TMDB
@@ -19,6 +22,7 @@ class MovieDetailModal extends StatefulWidget {
 class _MovieDetailModalState extends State<MovieDetailModal> {
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  final KeyDebouncer _debouncer = KeyDebouncer();
   
   // Navegação: 0=botões, 1=elenco, 2=recomendações
   int _currentSection = 0;
@@ -85,25 +89,34 @@ class _MovieDetailModalState extends State<MovieDetailModal> {
     final key = event.logicalKey;
     final isSeries = widget.movie.type == MovieType.series;
     final hasEpisodes = widget.movie.episodes != null;
-    final maxButton = (isSeries && hasEpisodes) ? 2 : 1;
+    // Botões: 0=Assistir, 1=Favorito, 2=Episódios (se série), último=Fechar
+    final maxButton = (isSeries && hasEpisodes) ? 3 : 2;
 
     if (key == LogicalKeyboardKey.arrowUp) {
+      HapticFeedback.selectionClick();
       _navigateUp();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.arrowDown) {
+      HapticFeedback.selectionClick();
       _navigateDown();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.arrowLeft) {
+      HapticFeedback.selectionClick();
       _navigateLeft(maxButton);
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.arrowRight) {
+      HapticFeedback.selectionClick();
       _navigateRight(maxButton);
       return KeyEventResult.handled;
-    } else if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter) {
+    } else if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.gameButtonA) {
+      HapticFeedback.mediumImpact();
       _handleSelect();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.goBack || key == LogicalKeyboardKey.escape) {
-      Navigator.of(context).pop();
+      if (_debouncer.shouldProcessBack()) {
+        HapticFeedback.lightImpact();
+        Navigator.of(context).pop();
+      }
       return KeyEventResult.handled;
     }
 
@@ -271,14 +284,19 @@ class _MovieDetailModalState extends State<MovieDetailModal> {
     // Seção de botões
     final isSeries = widget.movie.type == MovieType.series;
     final hasEpisodes = widget.movie.episodes != null;
+    // Botões: 0=Assistir, 1=Favorito, 2=Episódios (se série), último=Fechar
+    final maxButtons = isSeries && hasEpisodes ? 3 : 2;
     
     if (_selectedButton == 0) {
-      // Assistir
-      Navigator.of(context).pop();
+      // Assistir - não fecha o modal para poder voltar a ele
       Navigator.of(context).pushNamed('/movie-player', arguments: widget.movie);
-    } else if (_selectedButton == 1 && isSeries && hasEpisodes) {
-      // Ver Episódios (só para séries)
-      Navigator.of(context).pop();
+    } else if (_selectedButton == 1) {
+      // Favorito
+      final favProvider = context.read<MovieFavoritesProvider>();
+      favProvider.toggleFavorite(widget.movie);
+      setState(() {}); // Atualiza UI
+    } else if (_selectedButton == 2 && isSeries && hasEpisodes) {
+      // Ver Episódios (só para séries) - não fecha o modal
       Navigator.of(context).pushNamed('/series-episodes', arguments: widget.movie);
     } else {
       // Fechar
@@ -780,6 +798,8 @@ class _MovieDetailModalState extends State<MovieDetailModal> {
 
   Widget _buildActionButtons(bool isSeries) {
     final hasEpisodes = widget.movie.episodes != null;
+    final favProvider = context.watch<MovieFavoritesProvider>();
+    final isFavorite = favProvider.isFavorite(widget.movie.id);
     
     return Row(
       children: [
@@ -788,7 +808,6 @@ class _MovieDetailModalState extends State<MovieDetailModal> {
           flex: 2,
           child: GestureDetector(
             onTap: () {
-              Navigator.of(context).pop();
               Navigator.of(context).pushNamed('/movie-player', arguments: widget.movie);
             },
             child: _buildActionButton(
@@ -800,6 +819,21 @@ class _MovieDetailModalState extends State<MovieDetailModal> {
           ),
         ),
         
+        const SizedBox(width: 12),
+        
+        // Botão Favorito
+        GestureDetector(
+          onTap: () {
+            favProvider.toggleFavorite(widget.movie);
+          },
+          child: _buildActionButton(
+            isFavorite ? 'Favoritado' : 'Favoritar',
+            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            _selectedButton == 1,
+            isFavorite: isFavorite,
+          ),
+        ),
+        
         // Botão Ver Episódios (só para séries)
         if (isSeries && hasEpisodes) ...[
           const SizedBox(width: 12),
@@ -807,13 +841,12 @@ class _MovieDetailModalState extends State<MovieDetailModal> {
             flex: 2,
             child: GestureDetector(
               onTap: () {
-                Navigator.of(context).pop();
                 Navigator.of(context).pushNamed('/series-episodes', arguments: widget.movie);
               },
               child: _buildActionButton(
                 'Episódios',
                 Icons.list,
-                _selectedButton == 1,
+                _selectedButton == 2,
               ),
             ),
           ),
@@ -827,7 +860,7 @@ class _MovieDetailModalState extends State<MovieDetailModal> {
           child: _buildActionButton(
             'Fechar',
             Icons.close,
-            _selectedButton == (isSeries && hasEpisodes ? 2 : 1),
+            _selectedButton == (isSeries && hasEpisodes ? 3 : 2),
             isSecondary: true,
           ),
         ),
@@ -835,19 +868,23 @@ class _MovieDetailModalState extends State<MovieDetailModal> {
     );
   }
 
-  Widget _buildActionButton(String label, IconData icon, bool isFocused, {bool isPrimary = false, bool isSecondary = false}) {
+  Widget _buildActionButton(String label, IconData icon, bool isFocused, {bool isPrimary = false, bool isSecondary = false, bool isFavorite = false}) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 150),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
         gradient: isPrimary && isFocused
             ? const LinearGradient(colors: [Color(0xFFE50914), Color(0xFFFF2D2D)])
-            : null,
+            : isFavorite && isFocused
+                ? const LinearGradient(colors: [Color(0xFFE91E63), Color(0xFFFF4081)])
+                : null,
         color: isPrimary 
             ? (isFocused ? null : const Color(0xFFE50914))
-            : isSecondary
-                ? (isFocused ? Colors.grey[700] : Colors.grey[850])
-                : (isFocused ? const Color(0xFF333333) : const Color(0xFF252525)),
+            : isFavorite
+                ? (isFocused ? null : const Color(0xFFE91E63).withOpacity(0.8))
+                : isSecondary
+                    ? (isFocused ? Colors.grey[700] : Colors.grey[850])
+                    : (isFocused ? const Color(0xFF333333) : const Color(0xFF252525)),
         borderRadius: BorderRadius.circular(8),
         border: isFocused 
             ? Border.all(color: const Color(0xFFFFD700), width: 2.5) 

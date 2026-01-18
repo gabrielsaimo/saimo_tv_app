@@ -4,6 +4,7 @@ import '../providers/channels_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/storage_service.dart';
 import '../utils/theme.dart';
+import '../utils/tv_constants.dart';
 
 /// Tela de Splash com animação
 class SplashScreen extends StatefulWidget {
@@ -83,7 +84,7 @@ class _SplashScreenState extends State<SplashScreen>
           gradient: SaimoTheme.backgroundGradient,
         ),
         child: Center(
-          child: AnimatedBuilder(
+          child: TVAnimatedBuilder(
             animation: _controller,
             builder: (context, child) {
               return Opacity(
@@ -176,7 +177,7 @@ class _SplashScreenState extends State<SplashScreen>
           'TV ao vivo, sem limites',
           style: TextStyle(
             color: SaimoTheme.textSecondary,
-            fontSize: 18,
+            fontSize: TVConstants.fontM,
             letterSpacing: 1,
           ),
         ),
@@ -189,7 +190,7 @@ class _SplashScreenState extends State<SplashScreen>
           child: LinearProgressIndicator(
             backgroundColor: SaimoTheme.surfaceLight,
             valueColor: AlwaysStoppedAnimation<Color>(
-              SaimoTheme.primary.withOpacity(0.7),
+              TVConstants.focusColor.withOpacity(0.7),
             ),
           ),
         ),
@@ -200,7 +201,7 @@ class _SplashScreenState extends State<SplashScreen>
           'Carregando canais...',
           style: TextStyle(
             color: SaimoTheme.textTertiary,
-            fontSize: 14,
+            fontSize: TVConstants.fontS,
           ),
         ),
       ],
@@ -208,20 +209,4 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-/// Builder animado
-class AnimatedBuilder extends AnimatedWidget {
-  final Widget Function(BuildContext context, Widget? child) builder;
-  final Widget? child;
-
-  const AnimatedBuilder({
-    super.key,
-    required Animation<double> animation,
-    required this.builder,
-    this.child,
-  }) : super(listenable: animation);
-
-  @override
-  Widget build(BuildContext context) {
-    return builder(context, child);
-  }
-}
+// AnimatedBuilder agora é TVAnimatedBuilder de tv_constants.dart

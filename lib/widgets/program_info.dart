@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/program.dart';
 import '../utils/theme.dart';
+import '../utils/tv_constants.dart';
 
 /// Widget de informações do programa atual - Otimizado para TV
 class ProgramInfo extends StatelessWidget {
@@ -41,7 +42,7 @@ class ProgramInfo extends StatelessWidget {
             'Programação indisponível',
             style: TextStyle(
               color: SaimoTheme.textTertiary,
-              fontSize: 14,
+              fontSize: TVConstants.fontM,
             ),
           ),
         ],
@@ -88,13 +89,13 @@ class ProgramInfo extends StatelessWidget {
           // Horário com mais detalhes
           Row(
             children: [
-              const Icon(Icons.schedule, color: Colors.white54, size: 14),
+              const Icon(Icons.schedule, color: Colors.white54, size: TVConstants.iconS),
               const SizedBox(width: 4),
               Text(
                 currentProgram!.formattedStartTime,
                 style: const TextStyle(
                   color: Colors.white70,
-                  fontSize: 13,
+                  fontSize: TVConstants.fontS,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -106,7 +107,7 @@ class ProgramInfo extends StatelessWidget {
                 currentProgram!.formattedEndTime,
                 style: const TextStyle(
                   color: Colors.white70,
-                  fontSize: 13,
+                  fontSize: TVConstants.fontS,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -120,13 +121,13 @@ class ProgramInfo extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.timer, color: Colors.white70, size: 14),
+                    const Icon(Icons.timer, color: Colors.white70, size: TVConstants.iconS),
                     const SizedBox(width: 4),
                     Text(
                       '${currentProgram!.remainingMinutes} min',
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 13,
+                        fontSize: TVConstants.fontS,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -158,7 +159,7 @@ class ProgramInfo extends StatelessWidget {
                       'A SEGUIR',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 10,
+                        fontSize: TVConstants.fontXS,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -172,7 +173,7 @@ class ProgramInfo extends StatelessWidget {
                           nextProgram!.title,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 14,
+                            fontSize: TVConstants.fontM,
                             fontWeight: FontWeight.w500,
                           ),
                           maxLines: 1,
@@ -183,7 +184,7 @@ class ProgramInfo extends StatelessWidget {
                           '${nextProgram!.formattedStartTime} - ${nextProgram!.formattedEndTime}',
                           style: const TextStyle(
                             color: Colors.white54,
-                            fontSize: 12,
+                            fontSize: TVConstants.fontS,
                           ),
                         ),
                       ],
@@ -279,7 +280,7 @@ class ProgramInfo extends StatelessWidget {
             program.formattedStartTime,
             style: TextStyle(
               color: isNow ? SaimoTheme.primary : SaimoTheme.textSecondary,
-              fontSize: 11,
+              fontSize: TVConstants.fontS,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -309,7 +310,7 @@ class ProgramInfo extends StatelessWidget {
                 children: [
                   Icon(
                     Icons.schedule,
-                    size: 14,
+                    size: TVConstants.iconS,
                     color: SaimoTheme.textTertiary,
                   ),
                   const SizedBox(width: 4),
@@ -317,7 +318,7 @@ class ProgramInfo extends StatelessWidget {
                     program.formattedPeriod,
                     style: const TextStyle(
                       color: SaimoTheme.textTertiary,
-                      fontSize: 13,
+                      fontSize: TVConstants.fontS,
                     ),
                   ),
                   if (program.category != null) ...[
@@ -332,7 +333,7 @@ class ProgramInfo extends StatelessWidget {
                         program.category!,
                         style: const TextStyle(
                           color: SaimoTheme.primary,
-                          fontSize: 11,
+                          fontSize: TVConstants.fontXS,
                         ),
                       ),
                     ),
@@ -346,7 +347,7 @@ class ProgramInfo extends StatelessWidget {
                   program.description!,
                   style: const TextStyle(
                     color: SaimoTheme.textTertiary,
-                    fontSize: 13,
+                    fontSize: TVConstants.fontS,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

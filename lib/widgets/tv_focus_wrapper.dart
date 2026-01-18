@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/theme.dart';
+import '../utils/tv_constants.dart';
 
 /// Widget wrapper para itens focáveis otimizado para TV
 /// Implementa as melhores práticas de navegação D-Pad do Android TV/Fire TV
@@ -25,11 +26,11 @@ class TVFocusWrapper extends StatefulWidget {
     this.onLongPress,
     this.autofocus = false,
     this.enabled = true,
-    this.focusScale = 1.05,
+    this.focusScale = TVConstants.focusScale,
     this.focusBorderColor,
-    this.borderWidth = 3.0,
+    this.borderWidth = TVConstants.focusBorderWidth,
     this.borderRadius,
-    this.animationDuration = const Duration(milliseconds: 200),
+    this.animationDuration = TVConstants.animNormal,
     this.showFocusEffect = true,
     this.padding = EdgeInsets.zero,
   });
@@ -72,7 +73,7 @@ class _TVFocusWrapperState extends State<TVFocusWrapper>
     
     if (hasFocus) {
       _animationController.forward();
-      // Feedback de áudio/haptico pode ser adicionado aqui
+      HapticFeedback.selectionClick(); // Feedback haptic ao focar
     } else {
       _animationController.reverse();
     }
@@ -80,8 +81,8 @@ class _TVFocusWrapperState extends State<TVFocusWrapper>
 
   @override
   Widget build(BuildContext context) {
-    final focusColor = widget.focusBorderColor ?? SaimoTheme.primary;
-    final radius = widget.borderRadius ?? BorderRadius.circular(SaimoTheme.borderRadius);
+    final focusColor = widget.focusBorderColor ?? TVConstants.focusColor;
+    final radius = widget.borderRadius ?? BorderRadius.circular(TVConstants.radiusM);
 
     return Focus(
       autofocus: widget.autofocus,
@@ -95,6 +96,7 @@ class _TVFocusWrapperState extends State<TVFocusWrapper>
           if (event.logicalKey == LogicalKeyboardKey.enter ||
               event.logicalKey == LogicalKeyboardKey.select ||
               event.logicalKey == LogicalKeyboardKey.gameButtonA) {
+            HapticFeedback.mediumImpact();
             widget.onSelect?.call();
             return KeyEventResult.handled;
           }
@@ -102,6 +104,7 @@ class _TVFocusWrapperState extends State<TVFocusWrapper>
           // Long press com Menu
           if (event.logicalKey == LogicalKeyboardKey.contextMenu ||
               event.logicalKey == LogicalKeyboardKey.gameButtonX) {
+            HapticFeedback.heavyImpact();
             widget.onLongPress?.call();
             return KeyEventResult.handled;
           }
@@ -111,7 +114,7 @@ class _TVFocusWrapperState extends State<TVFocusWrapper>
       child: GestureDetector(
         onTap: widget.enabled ? widget.onSelect : null,
         onLongPress: widget.enabled ? widget.onLongPress : null,
-        child: AnimatedBuilder(
+        child: TVAnimatedBuilder(
           animation: _scaleAnimation,
           builder: (context, child) {
             return Transform.scale(
@@ -144,46 +147,4 @@ class _TVFocusWrapperState extends State<TVFocusWrapper>
   }
 }
 
-/// AnimatedBuilder correto
-class AnimatedBuilder extends AnimatedWidget {
-  final Widget Function(BuildContext context, Widget? child) builder;
-  final Widget? child;
-
-  const AnimatedBuilder({
-    super.key,
-    required Animation<double> animation,
-    required this.builder,
-    this.child,
-  }) : super(listenable: animation);
-
-  @override
-  Widget build(BuildContext context) {
-    return builder(context, child);
-  }
-}
-
-/// Helper para obter se estamos em TV
-bool isTV(BuildContext context) {
-  final size = MediaQuery.of(context).size;
-  final shortestSide = size.shortestSide;
-  
-  // TV: tela grande em landscape
-  return shortestSide > 600 && size.width > size.height;
-}
-
-/// Helper para tamanhos adaptativos
-double adaptiveSize(BuildContext context, {
-  required double mobile,
-  required double tablet,
-  required double tv,
-}) {
-  final size = MediaQuery.of(context).size;
-  final shortestSide = size.shortestSide;
-  
-  if (shortestSide > 600 && size.width > size.height) {
-    return tv;
-  } else if (shortestSide > 600) {
-    return tablet;
-  }
-  return mobile;
-}
+// AnimatedBuilder e isTV agora são de tv_constants.dart - TVAnimatedBuilder e TVConstants.isTV()

@@ -12,6 +12,7 @@ import '../providers/favorites_provider.dart';
 import '../providers/epg_provider.dart';
 import '../providers/player_provider.dart';
 import '../utils/theme.dart';
+import '../utils/tv_constants.dart';
 
 /// Tela de Canais Premium - Design moderno para provedores de TV
 /// Otimizada para TV, Tablet e Mobile com navegação D-Pad fluida
@@ -148,11 +149,8 @@ class _ChannelsScreenState extends State<ChannelsScreen>
   }
 
   bool _isTV(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final isLargeScreen = size.shortestSide > 600;
-    final isLandscape = size.width > size.height;
-    final isVeryLargeScreen = size.width >= 1280 || size.height >= 720;
-    return (isLargeScreen && isLandscape) || (isVeryLargeScreen && isLandscape);
+    // Usa a detecção centralizada de TVConstants ou modo dpad ativo
+    return TVConstants.isTV(context) || _isDpadMode;
   }
 
   bool _isTablet(BuildContext context) {
@@ -160,7 +158,7 @@ class _ChannelsScreenState extends State<ChannelsScreen>
   }
 
   int _getColumnCount(BuildContext context) {
-    final isTV = _isTV(context) || _isDpadMode;
+    final isTV = _isTV(context);
     if (isTV) return 5;
     if (_isTablet(context)) return 4;
     final width = MediaQuery.of(context).size.width;

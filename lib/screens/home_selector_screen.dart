@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/theme.dart';
+import '../utils/tv_constants.dart';
+import '../utils/key_debouncer.dart';
 
 /// Tela de seleção inicial - Canais ou Filmes & Séries
 class HomeSelectorScreen extends StatefulWidget {
@@ -14,6 +16,7 @@ class _HomeSelectorScreenState extends State<HomeSelectorScreen>
     with TickerProviderStateMixin {
   int _selectedIndex = 0;
   final FocusNode _mainFocusNode = FocusNode();
+  final KeyDebouncer _debouncer = KeyDebouncer();
   late AnimationController _pulseController;
   late AnimationController _scaleController;
   
@@ -121,7 +124,9 @@ class _HomeSelectorScreenState extends State<HomeSelectorScreen>
             } else if (key == LogicalKeyboardKey.goBack || 
                        key == LogicalKeyboardKey.escape ||
                        key == LogicalKeyboardKey.browserBack) {
-              _handleBackPress();
+              if (_debouncer.shouldProcessBack()) {
+                _handleBackPress();
+              }
               return KeyEventResult.handled;
             }
             
@@ -149,7 +154,7 @@ class _HomeSelectorScreenState extends State<HomeSelectorScreen>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       // Logo
-                      AnimatedBuilder(
+                      TVAnimatedBuilder(
                         animation: _pulseController,
                         builder: (context, child) {
                           return Container(

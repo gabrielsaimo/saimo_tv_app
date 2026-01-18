@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:http/http.dart' as http;
 import '../models/channel.dart';
 import '../models/program.dart';
 import '../providers/channels_provider.dart';
@@ -11,6 +12,8 @@ import '../providers/player_provider.dart';
 import '../providers/epg_provider.dart';
 import '../providers/favorites_provider.dart';
 import '../utils/theme.dart';
+import '../utils/tv_constants.dart';
+import '../utils/key_debouncer.dart';
 import '../widgets/program_info.dart';
 import '../widgets/channel_logo.dart';
 import '../services/epg_service.dart';
@@ -30,6 +33,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _progressTimer;
   Timer? _videoHealthTimer; // Timer para verificar saúde do vídeo e evitar tela preta
   final VolumeBoostService _volumeBoostService = VolumeBoostService();
+  final KeyDebouncer _debouncer = KeyDebouncer();
   bool _showControls = true;
   bool _isBuffering = true;
   String? _error;
@@ -194,6 +198,56 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  /// Resolve redirects HTTP e retorna a URL final
+  /// Usa GET com Range header pois alguns servidores IPTV não respondem redirects para HEAD
+  Future<String> _resolveRedirects(String url) async {
+    try {
+      final client = http.Client();
+      var currentUrl = url;
+      var redirectCount = 0;
+      const maxRedirects = 10;
+      
+      while (redirectCount < maxRedirects) {
+        // Usa GET com Range para detectar redirects (HEAD não funciona em alguns servidores IPTV)
+        final request = http.Request('GET', Uri.parse(currentUrl))
+          ..followRedirects = false
+          ..headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 10; Android TV) AppleWebKit/537.36 SaimoTV/1.0'
+          ..headers['Range'] = 'bytes=0-0';  // Solicita apenas 1 byte para economizar banda
+        
+        final response = await client.send(request).timeout(const Duration(seconds: 15));
+        
+        // Verifica redirect pelo status code (301, 302, 307, 308)
+        if (response.statusCode == 301 || response.statusCode == 302 || 
+            response.statusCode == 307 || response.statusCode == 308) {
+          final location = response.headers['location'];
+          if (location != null && location.isNotEmpty) {
+            // Se a location é relativa, constrói URL absoluta
+            if (location.startsWith('/')) {
+              final uri = Uri.parse(currentUrl);
+              currentUrl = '${uri.scheme}://${uri.host}:${uri.port}$location';
+            } else {
+              currentUrl = location;
+            }
+            redirectCount++;
+            debugPrint('Redirect $redirectCount: $currentUrl');
+          } else {
+            break;
+          }
+        } else {
+          // Não é redirect (200, 206, etc), retorna URL atual
+          client.close();
+          return currentUrl;
+        }
+      }
+      
+      client.close();
+      return currentUrl;
+    } catch (e) {
+      debugPrint('Erro ao resolver redirects: $e');
+      // Em caso de erro, retorna a URL original
+      return url;
+    }
+  }
 
   Future<void> _initializePlayer() async {
     final playerProvider = context.read<PlayerProvider>();
@@ -211,17 +265,51 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     try {
       _videoController?.dispose();
+      _videoController = null;
+      
+      // Validação da URL
+      var url = channel.url.trim();
+      if (url.isEmpty) {
+        throw Exception('URL do canal inválida');
+      }
+      
+      debugPrint('Iniciando player para: ${channel.name}');
+      debugPrint('URL original: $url');
+      
+      // Resolve redirects para obter URL final (muitos servidores IPTV usam redirect)
+      // Apenas para URLs MP4/streams VOD, não para HLS/M3U8 (que já lidam com redirects)
+      if (!url.contains('.m3u8') && !url.contains('.m3u')) {
+        url = await _resolveRedirects(url);
+        debugPrint('URL final: $url');
+      }
       
       _videoController = VideoPlayerController.networkUrl(
-        Uri.parse(channel.url),
+        Uri.parse(url),
+        httpHeaders: const {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Android TV) AppleWebKit/537.36 SaimoTV/1.0',
+          'Connection': 'keep-alive',
+          'Accept': '*/*',
+        },
         videoPlayerOptions: VideoPlayerOptions(
           mixWithOthers: false,
           allowBackgroundPlayback: false,
         ),
       );
 
-      await _videoController!.initialize();
-      await _videoController!.setVolume(_volume);
+      await _videoController!.initialize().timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw Exception('Tempo limite excedido ao conectar'),
+      );
+      
+      // Verifica se inicializou corretamente
+      if (!_videoController!.value.isInitialized) {
+        throw Exception('Falha na inicialização do vídeo');
+      }
+      
+      // IMPORTANTE: Definir volume ANTES de dar play para evitar glitches de áudio
+      final effectiveVolume = _isMuted ? 0.0 : _volume.clamp(0.0, 1.0);
+      await _videoController!.setVolume(effectiveVolume);
+      
       await _videoController!.play();
 
       _videoController!.addListener(_onVideoUpdate);
@@ -241,9 +329,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _onVideoUpdate() {
-    if (_videoController == null) return;
+    if (_videoController == null || !mounted) return;
     
-    final isBuffering = _videoController!.value.isBuffering;
+    final value = _videoController!.value;
+    
+    // Verifica erros no player
+    if (value.hasError && _error == null) {
+      setState(() {
+        _error = value.errorDescription ?? 'Erro na reprodução do vídeo';
+        _isBuffering = false;
+      });
+      return;
+    }
+    
+    final isBuffering = value.isBuffering;
     if (isBuffering != _isBuffering) {
       setState(() => _isBuffering = isBuffering);
     }
@@ -251,7 +350,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _startHideControlsTimer() {
     _hideControlsTimer?.cancel();
-    _hideControlsTimer = Timer(const Duration(seconds: 5), () {
+    _hideControlsTimer = Timer(const Duration(seconds: 8), () {
       if (mounted && _showControls) {
         setState(() => _showControls = false);
       }
@@ -269,27 +368,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
     
     _showControlsTemporarily();
     
-    // Verificação especial para botão VOLTAR do Android/Fire TV
-    // O botão back pode ser identificado por diferentes códigos dependendo do dispositivo
-    final keyLabel = event.logicalKey.keyLabel.toLowerCase();
-    final keyId = event.logicalKey.keyId;
+    final key = event.logicalKey;
     
-    // KeyId 4294967425 = GoBack no Android
-    // KeyId 4294967511 = Escape
-    // Também verifica pelo label que pode ser "go back" ou "browser back"
+    // Verificação para botão VOLTAR - usa apenas LogicalKeyboardKey (mais confiável)
     final isBackButton = 
-        event.logicalKey == LogicalKeyboardKey.goBack ||
-        event.logicalKey == LogicalKeyboardKey.escape ||
-        event.logicalKey == LogicalKeyboardKey.browserBack ||
-        keyLabel.contains('back') ||
-        keyId == 0x100000125 || // GoBack
-        keyId == 0x100000169;   // BrowserBack
+        key == LogicalKeyboardKey.goBack ||
+        key == LogicalKeyboardKey.escape ||
+        key == LogicalKeyboardKey.browserBack;
     
     if (isBackButton) {
-      if (_showChannelList) {
-        _hideChannelList();
-      } else {
-        _navigateBack();
+      if (_debouncer.shouldProcessBack()) {
+        HapticFeedback.lightImpact();
+        if (_showChannelList) {
+          _hideChannelList();
+        } else {
+          _navigateBack();
+        }
       }
       return; // Importante: retorna para não processar mais nada
     }
@@ -299,10 +393,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final currentChannel = playerProvider.currentChannel;
     final channels = channelsProvider.channels;
 
-    switch (event.logicalKey) {
+    switch (key) {
       // OK/Select - Abre lista de canais ou confirma canal selecionado
       case LogicalKeyboardKey.enter:
       case LogicalKeyboardKey.select:
+      case LogicalKeyboardKey.gameButtonA:
+        HapticFeedback.mediumImpact();
         if (_showChannelList) {
           // Confirma o canal selecionado
           if (_selectedChannelIndex >= 0 && _selectedChannelIndex < channels.length) {
@@ -317,6 +413,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         
       // Navegação para cima - MUDA CANAL quando fora da lista, navega programação quando na lista
       case LogicalKeyboardKey.arrowUp:
+        HapticFeedback.selectionClick();
         if (_showChannelList) {
           // Navega para cima na programação (programa anterior)
           setState(() {
@@ -336,6 +433,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         
       // Navegação para baixo - MUDA CANAL quando fora da lista, navega programação quando na lista
       case LogicalKeyboardKey.arrowDown:
+        HapticFeedback.selectionClick();
         if (_showChannelList) {
           // Navega para baixo na programação (próximo programa)
           setState(() {

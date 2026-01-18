@@ -6,6 +6,7 @@ import '../providers/channels_provider.dart';
 import '../providers/favorites_provider.dart';
 import '../providers/lazy_movies_provider.dart';
 import '../utils/theme.dart';
+import '../utils/tv_constants.dart';
 
 /// Tela de Configurações com navegação D-Pad
 class SettingsScreen extends StatefulWidget {
@@ -55,32 +56,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       switch (event.logicalKey) {
         case LogicalKeyboardKey.arrowUp:
+          HapticFeedback.selectionClick();
           _selectedIndex = (_selectedIndex - 1).clamp(0, _items.length - 1);
           _scrollToSelected();
           break;
           
         case LogicalKeyboardKey.arrowDown:
+          HapticFeedback.selectionClick();
           _selectedIndex = (_selectedIndex + 1).clamp(0, _items.length - 1);
           _scrollToSelected();
           break;
           
         case LogicalKeyboardKey.arrowLeft:
+          HapticFeedback.selectionClick();
           _handleLeftRight(-1);
           break;
           
         case LogicalKeyboardKey.arrowRight:
+          HapticFeedback.selectionClick();
           _handleLeftRight(1);
           break;
           
         case LogicalKeyboardKey.select:
         case LogicalKeyboardKey.enter:
         case LogicalKeyboardKey.gameButtonA:
+          HapticFeedback.mediumImpact();
           _handleSelect();
           break;
           
         case LogicalKeyboardKey.escape:
         case LogicalKeyboardKey.goBack:
         case LogicalKeyboardKey.gameButtonB:
+          HapticFeedback.lightImpact();
           Navigator.of(context).pop();
           break;
       }

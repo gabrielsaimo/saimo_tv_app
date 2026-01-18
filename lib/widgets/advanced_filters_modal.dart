@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/lazy_movies_provider.dart';
+import '../utils/tv_constants.dart';
 
 /// Filtros avançados disponíveis
 class AdvancedFilters {
@@ -206,21 +207,27 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
     final key = event.logicalKey;
 
     if (key == LogicalKeyboardKey.arrowUp) {
+      HapticFeedback.selectionClick();
       _navigateUp();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.arrowDown) {
+      HapticFeedback.selectionClick();
       _navigateDown();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.arrowLeft) {
+      HapticFeedback.selectionClick();
       _navigateLeft();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.arrowRight) {
+      HapticFeedback.selectionClick();
       _navigateRight();
       return KeyEventResult.handled;
-    } else if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter) {
+    } else if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.gameButtonA) {
+      HapticFeedback.mediumImpact();
       _handleSelect();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.goBack || key == LogicalKeyboardKey.escape) {
+      HapticFeedback.lightImpact();
       Navigator.of(context).pop();
       return KeyEventResult.handled;
     }
@@ -269,13 +276,20 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
     });
   }
 
+  // Listas compactas para o novo layout
+  List<int?> get _compactYearOptions => [null, 2025, 2024, 2023, 2020, 2015, 2010];
+  List<double?> get _compactRatingOptions => [null, 8.0, 7.0, 6.0, 5.0];
+  List<String> get _compactCertOptions => ['Todas', 'L', '10', '12', '14', '16', '18'];
+  List<int?> get _compactRuntimeOptions => [null, 90, 120, 180];
+  List<String> get _displayGenres => _availableGenres.toList()..sort();
+
   int _getMaxIndexForSection(int section) {
     switch (section) {
-      case 0: return _availableGenres.length - 1; // Gêneros
-      case 1: return _yearOptions.length - 1; // Ano
-      case 2: return _ratingOptions.length - 1; // Nota
-      case 3: return _certificationOptions.length - 1; // Classificação
-      case 4: return _runtimeOptions.length - 1; // Duração
+      case 0: return (_displayGenres.take(14).length - 1).clamp(0, 999); // Gêneros (max 14)
+      case 1: return _compactYearOptions.length - 1; // Ano
+      case 2: return _compactRatingOptions.length - 1; // Nota
+      case 3: return _compactCertOptions.length - 1; // Classificação
+      case 4: return _compactRuntimeOptions.length - 1; // Duração
       case 5: return SortOption.values.length - 1; // Ordenação
       case 6: return 2; // Botões (Limpar, Cancelar, Aplicar)
       default: return 0;
@@ -285,8 +299,9 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
   void _handleSelect() {
     switch (_currentSection) {
       case 0: // Gêneros
-        if (_availableGenres.isNotEmpty) {
-          final genre = _availableGenres.elementAt(_selectedItemIndex.clamp(0, _availableGenres.length - 1));
+        final genreList = _displayGenres.take(14).toList();
+        if (genreList.isNotEmpty) {
+          final genre = genreList[_selectedItemIndex.clamp(0, genreList.length - 1)];
           setState(() {
             final newGenres = Set<String>.from(_filters.genres);
             if (newGenres.contains(genre)) {
@@ -299,19 +314,19 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
         }
         break;
       case 1: // Ano
-        final year = _yearOptions[_selectedItemIndex.clamp(0, _yearOptions.length - 1)];
+        final year = _compactYearOptions[_selectedItemIndex.clamp(0, _compactYearOptions.length - 1)];
         setState(() {
           _filters = _filters.copyWith(yearFrom: year, clearYearFrom: year == null);
         });
         break;
       case 2: // Nota
-        final rating = _ratingOptions[_selectedItemIndex.clamp(0, _ratingOptions.length - 1)];
+        final rating = _compactRatingOptions[_selectedItemIndex.clamp(0, _compactRatingOptions.length - 1)];
         setState(() {
           _filters = _filters.copyWith(minRating: rating, clearMinRating: rating == null);
         });
         break;
       case 3: // Classificação
-        final cert = _certificationOptions[_selectedItemIndex.clamp(0, _certificationOptions.length - 1)];
+        final cert = _compactCertOptions[_selectedItemIndex.clamp(0, _compactCertOptions.length - 1)];
         setState(() {
           _filters = _filters.copyWith(
             certification: cert == 'Todas' ? null : cert,
@@ -320,7 +335,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
         });
         break;
       case 4: // Duração
-        final runtime = _runtimeOptions[_selectedItemIndex.clamp(0, _runtimeOptions.length - 1)];
+        final runtime = _compactRuntimeOptions[_selectedItemIndex.clamp(0, _compactRuntimeOptions.length - 1)];
         setState(() {
           _filters = _filters.copyWith(maxRuntime: runtime, clearMaxRuntime: runtime == null);
         });
@@ -362,10 +377,10 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
       onKeyEvent: _handleKeyEvent,
       child: Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(40),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Container(
-          width: size.width * 0.8,
-          height: size.height * 0.85,
+          width: size.width * 0.92,
+          constraints: BoxConstraints(maxHeight: size.height * 0.95),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -375,7 +390,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
                 const Color(0xFF0F0F1A),
               ],
             ),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.white.withOpacity(0.1)),
             boxShadow: [
               BoxShadow(
@@ -386,39 +401,120 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _buildHeader(),
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(key: _sectionKeys[0], child: _buildGenresSection()),
-                        const SizedBox(height: 24),
-                        Container(key: _sectionKeys[1], child: _buildYearSection()),
-                        const SizedBox(height: 24),
-                        Container(key: _sectionKeys[2], child: _buildRatingSection()),
-                        const SizedBox(height: 24),
-                        Container(key: _sectionKeys[3], child: _buildCertificationSection()),
-                        const SizedBox(height: 24),
-                        Container(key: _sectionKeys[4], child: _buildRuntimeSection()),
-                        const SizedBox(height: 24),
-                        Container(key: _sectionKeys[5], child: _buildSortSection()),
-                        const SizedBox(height: 24),
-                        Container(key: _sectionKeys[6], child: _buildActionButtons()),
-                        const SizedBox(height: 16),
-                      ],
-                    ),
+                _buildCompactHeader(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Linha 1: Gêneros (compacto)
+                      Container(key: _sectionKeys[0], child: _buildCompactGenresSection()),
+                      const SizedBox(height: 10),
+                      // Linha 2: Ano, Nota, Classificação (3 colunas)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: Container(key: _sectionKeys[1], child: _buildCompactYearSection())),
+                          const SizedBox(width: 12),
+                          Expanded(child: Container(key: _sectionKeys[2], child: _buildCompactRatingSection())),
+                          const SizedBox(width: 12),
+                          Expanded(child: Container(key: _sectionKeys[3], child: _buildCompactCertificationSection())),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      // Linha 3: Duração e Ordenação (2 colunas)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: Container(key: _sectionKeys[4], child: _buildCompactRuntimeSection())),
+                          const SizedBox(width: 12),
+                          Expanded(flex: 2, child: Container(key: _sectionKeys[5], child: _buildCompactSortSection())),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Botões
+                      Container(key: _sectionKeys[6], child: _buildActionButtons()),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCompactHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFE50914).withOpacity(0.2),
+            Colors.transparent,
+          ],
+        ),
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withOpacity(0.1)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFE50914), Color(0xFFB20710)],
+              ),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.tune_rounded, color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'Filtros Avançados',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const Spacer(),
+          if (_filters.hasFilters)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE50914),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                '${_filters.filterCount} ativo${_filters.filterCount > 1 ? 's' : ''}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Text(
+              '↑↓ seção  ←→ item  OK seleciona',
+              style: TextStyle(color: Colors.white54, fontSize: 10),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -527,6 +623,261 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildCompactChip({
+    required String label,
+    required bool isSelected,
+    required bool isFocused,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 100),
+      padding: EdgeInsets.symmetric(
+        horizontal: isFocused ? 10 : 8,
+        vertical: isFocused ? 5 : 4,
+      ),
+      decoration: BoxDecoration(
+        gradient: isSelected
+            ? const LinearGradient(colors: [Color(0xFFE50914), Color(0xFFB20710)])
+            : null,
+        color: isSelected ? null : Colors.white.withOpacity(isFocused ? 0.15 : 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isFocused
+              ? const Color(0xFFFFD700)
+              : isSelected
+                  ? Colors.transparent
+                  : Colors.white.withOpacity(0.2),
+          width: isFocused ? 2 : 1,
+        ),
+        boxShadow: isFocused
+            ? [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.3), blurRadius: 6)]
+            : null,
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: isSelected || isFocused ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactSectionTitle(String title, IconData icon, bool isFocused) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            color: isFocused ? const Color(0xFFE50914) : Colors.white54,
+            size: 14,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            title,
+            style: TextStyle(
+              color: isFocused ? Colors.white : Colors.white70,
+              fontSize: 12,
+              fontWeight: isFocused ? FontWeight.bold : FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactGenresSection() {
+    final isFocused = _currentSection == 0;
+    final genreList = _availableGenres.toList()..sort();
+    // Mostrar apenas os 12 gêneros mais comuns para caber
+    final displayGenres = genreList.take(14).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildCompactSectionTitle('Gêneros', Icons.category_rounded, isFocused),
+        if (displayGenres.isEmpty)
+          Text('Carregando...', style: TextStyle(color: Colors.white38, fontSize: 10))
+        else
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: displayGenres.asMap().entries.map((entry) {
+              final index = entry.key;
+              final genre = entry.value;
+              final isSelected = _filters.genres.contains(genre);
+              final isItemFocused = isFocused && _selectedItemIndex == index;
+              return _buildCompactChip(
+                label: genre,
+                isSelected: isSelected,
+                isFocused: isItemFocused,
+              );
+            }).toList(),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCompactYearSection() {
+    final isFocused = _currentSection == 1;
+    final compactYearOptions = [null, 2025, 2024, 2023, 2020, 2015, 2010];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildCompactSectionTitle('Ano', Icons.calendar_today_rounded, isFocused),
+        Wrap(
+          spacing: 5,
+          runSpacing: 4,
+          children: compactYearOptions.asMap().entries.map((entry) {
+            final index = entry.key;
+            final year = entry.value;
+            final label = year == null ? 'Todos' : '$year+';
+            final isSelected = _filters.yearFrom == year;
+            final isItemFocused = isFocused && _selectedItemIndex == index;
+            return _buildCompactChip(
+              label: label,
+              isSelected: isSelected,
+              isFocused: isItemFocused,
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompactRatingSection() {
+    final isFocused = _currentSection == 2;
+    final compactRatingOptions = [null, 8.0, 7.0, 6.0, 5.0];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildCompactSectionTitle('Nota', Icons.star_rounded, isFocused),
+        Wrap(
+          spacing: 5,
+          runSpacing: 4,
+          children: compactRatingOptions.asMap().entries.map((entry) {
+            final index = entry.key;
+            final rating = entry.value;
+            final label = rating == null ? 'Todas' : '${rating.toInt()}+⭐';
+            final isSelected = _filters.minRating == rating;
+            final isItemFocused = isFocused && _selectedItemIndex == index;
+            return _buildCompactChip(
+              label: label,
+              isSelected: isSelected,
+              isFocused: isItemFocused,
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompactCertificationSection() {
+    final isFocused = _currentSection == 3;
+    final compactCertOptions = ['Todas', 'L', '10', '12', '14', '16', '18'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildCompactSectionTitle('Classif.', Icons.child_care_rounded, isFocused),
+        Wrap(
+          spacing: 5,
+          runSpacing: 4,
+          children: compactCertOptions.asMap().entries.map((entry) {
+            final index = entry.key;
+            final cert = entry.value;
+            final isSelected = cert == 'Todas'
+                ? _filters.certification == null
+                : _filters.certification == cert;
+            final isItemFocused = isFocused && _selectedItemIndex == index;
+            return _buildCompactChip(
+              label: cert,
+              isSelected: isSelected,
+              isFocused: isItemFocused,
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompactRuntimeSection() {
+    final isFocused = _currentSection == 4;
+    final compactRuntimeOptions = [null, 90, 120, 180];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildCompactSectionTitle('Duração', Icons.timer_rounded, isFocused),
+        Wrap(
+          spacing: 5,
+          runSpacing: 4,
+          children: compactRuntimeOptions.asMap().entries.map((entry) {
+            final index = entry.key;
+            final runtime = entry.value;
+            final label = runtime == null
+                ? 'Qualquer'
+                : runtime < 60
+                    ? '${runtime}m'
+                    : '${runtime ~/ 60}h${runtime % 60 > 0 ? '${runtime % 60}m' : ''}';
+            final isSelected = _filters.maxRuntime == runtime;
+            final isItemFocused = isFocused && _selectedItemIndex == index;
+            return _buildCompactChip(
+              label: label,
+              isSelected: isSelected,
+              isFocused: isItemFocused,
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompactSortSection() {
+    final isFocused = _currentSection == 5;
+    final sortLabels = {
+      SortOption.name: 'Nome',
+      SortOption.year: 'Ano',
+      SortOption.rating: 'Nota',
+      SortOption.popularity: 'Popular',
+      SortOption.runtime: 'Duração',
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildCompactSectionTitle('Ordenar', Icons.sort_rounded, isFocused),
+        Wrap(
+          spacing: 5,
+          runSpacing: 4,
+          children: SortOption.values.asMap().entries.map((entry) {
+            final index = entry.key;
+            final sort = entry.value;
+            final isSelected = _filters.sortBy == sort;
+            final isItemFocused = isFocused && _selectedItemIndex == index;
+            final arrow = isSelected
+                ? (_filters.sortDescending ? '↓' : '↑')
+                : '';
+            return _buildCompactChip(
+              label: '${sortLabels[sort]}$arrow',
+              isSelected: isSelected,
+              isFocused: isItemFocused,
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 

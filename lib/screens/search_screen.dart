@@ -6,6 +6,7 @@ import '../providers/channels_provider.dart';
 import '../providers/favorites_provider.dart';
 import '../providers/player_provider.dart';
 import '../utils/theme.dart';
+import '../utils/tv_constants.dart';
 import '../widgets/channel_card.dart';
 
 /// Tela de Busca de Canais
@@ -66,6 +67,7 @@ class _SearchScreenState extends State<SearchScreen> {
     switch (event.logicalKey) {
       case LogicalKeyboardKey.escape:
       case LogicalKeyboardKey.goBack:
+        HapticFeedback.lightImpact();
         if (_searchController.text.isNotEmpty) {
           _searchController.clear();
           _onSearch('');
@@ -193,7 +195,7 @@ class _SearchScreenState extends State<SearchScreen> {
               '${_searchResults.length} canais',
               style: const TextStyle(
                 color: SaimoTheme.textSecondary,
-                fontSize: 14,
+                fontSize: TVConstants.fontM,
               ),
             ),
           ),
@@ -243,7 +245,7 @@ class _SearchScreenState extends State<SearchScreen> {
           Icon(
             _isSearching ? Icons.search_off : Icons.live_tv,
             color: SaimoTheme.textTertiary,
-            size: 80,
+            size: TVConstants.iconXXL,
           ),
           const SizedBox(height: 24),
           Text(
@@ -252,7 +254,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 : 'Digite para buscar canais',
             style: const TextStyle(
               color: SaimoTheme.textSecondary,
-              fontSize: 20,
+              fontSize: TVConstants.fontXL,
             ),
           ),
           if (_isSearching) ...[
@@ -261,7 +263,7 @@ class _SearchScreenState extends State<SearchScreen> {
               'Tente buscar por nome, categoria ou número',
               style: const TextStyle(
                 color: SaimoTheme.textTertiary,
-                fontSize: 14,
+                fontSize: TVConstants.fontM,
               ),
             ),
           ],

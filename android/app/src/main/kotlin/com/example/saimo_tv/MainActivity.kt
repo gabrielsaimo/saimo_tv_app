@@ -3,6 +3,7 @@ package com.example.saimo_tv
 import android.media.AudioManager
 import android.media.audiofx.LoudnessEnhancer
 import android.content.Context
+import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -11,6 +12,23 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.saimo.tv/volume"
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var audioSessionId: Int = 0
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        
+        // Configura o áudio para streaming de mídia em TVs
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        
+        // Garante que o volume de mídia está ativo
+        volumeControlStream = AudioManager.STREAM_MUSIC
+        
+        // Define o modo de áudio para streaming (importante para Fire TV)
+        try {
+            audioManager.mode = AudioManager.MODE_NORMAL
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

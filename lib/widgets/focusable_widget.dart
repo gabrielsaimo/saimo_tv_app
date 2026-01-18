@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../utils/tv_constants.dart';
 
 /// Widget focável para navegação com D-Pad (controle remoto)
 /// Essencial para TV Box e Fire TV
@@ -22,9 +23,9 @@ class FocusableWidget extends StatefulWidget {
     this.onLongPress,
     this.autofocus = false,
     this.focusNode,
-    this.focusScale = 1.05,
+    this.focusScale = TVConstants.focusScale,
     this.focusColor,
-    this.animationDuration = const Duration(milliseconds: 150),
+    this.animationDuration = TVConstants.animFast,
     this.borderRadius,
     this.enabled = true,
   });
@@ -85,7 +86,7 @@ class _FocusableWidgetState extends State<FocusableWidget>
 
   @override
   Widget build(BuildContext context) {
-    final focusColor = widget.focusColor ?? Theme.of(context).colorScheme.primary;
+    final focusColor = widget.focusColor ?? TVConstants.focusColor;
     
     return Focus(
       focusNode: _focusNode,
@@ -96,7 +97,9 @@ class _FocusableWidgetState extends State<FocusableWidget>
         
         if (event is KeyDownEvent) {
           if (event.logicalKey == LogicalKeyboardKey.enter ||
-              event.logicalKey == LogicalKeyboardKey.select) {
+              event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.gameButtonA) {
+            HapticFeedback.selectionClick();
             widget.onPressed?.call();
             return KeyEventResult.handled;
           }
@@ -106,7 +109,7 @@ class _FocusableWidgetState extends State<FocusableWidget>
       child: GestureDetector(
         onTap: widget.enabled ? widget.onPressed : null,
         onLongPress: widget.enabled ? widget.onLongPress : null,
-        child: AnimatedBuilder(
+        child: TVAnimatedBuilder(
           animation: _scaleAnimation,
           builder: (context, child) {
             return Transform.scale(
@@ -114,9 +117,9 @@ class _FocusableWidgetState extends State<FocusableWidget>
               child: AnimatedContainer(
                 duration: widget.animationDuration,
                 decoration: BoxDecoration(
-                  borderRadius: widget.borderRadius ?? BorderRadius.circular(12),
+                  borderRadius: widget.borderRadius ?? BorderRadius.circular(TVConstants.radiusM),
                   border: _isFocused
-                      ? Border.all(color: focusColor, width: 3)
+                      ? Border.all(color: focusColor, width: TVConstants.focusBorderWidth)
                       : null,
                   boxShadow: _isFocused
                       ? [
@@ -138,20 +141,4 @@ class _FocusableWidgetState extends State<FocusableWidget>
   }
 }
 
-/// Builder animado que estende AnimatedWidget corretamente
-class AnimatedBuilder extends AnimatedWidget {
-  final Widget Function(BuildContext context, Widget? child) builder;
-  final Widget? child;
-
-  const AnimatedBuilder({
-    super.key,
-    required Animation<double> animation,
-    required this.builder,
-    this.child,
-  }) : super(listenable: animation);
-
-  @override
-  Widget build(BuildContext context) {
-    return builder(context, child);
-  }
-}
+// AnimatedBuilder agora é TVAnimatedBuilder de tv_constants.dart

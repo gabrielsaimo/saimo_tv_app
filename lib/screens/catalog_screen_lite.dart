@@ -3,11 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../models/movie.dart';
 import '../providers/lazy_movies_provider.dart';
+import '../providers/movie_favorites_provider.dart';
 import '../widgets/movie_detail_modal.dart';
 import '../widgets/series_modal_optimized.dart';
 import '../widgets/advanced_filters_modal.dart';
 import '../services/tmdb_image_service.dart';
+import '../utils/tv_constants.dart';
+import '../utils/key_debouncer.dart';
 
 /// Tela de Catálogo Ultra Otimizada para Fire TV Lite
 /// - Menos widgets = menos memória
@@ -26,9 +30,12 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   // Seções: 0=header, 1=filtros, 2=conteúdo
   int _section = 1;
   int _headerIndex = 0; // 0=voltar, 1=tv ao vivo, 2=config
-  int _filterIndex = 0; // 0=categorias, 1=todos, 2=filmes, 3=séries, 4=avançado, 5=buscar
+  int _filterIndex = 0; // 0=categorias, 1=favoritos, 2=todos, 3=filmes, 4=séries, 5=avançado, 6=buscar
   int _contentRow = 0;
   int _contentCol = 0;
+  
+  // === MODO FAVORITOS ===
+  bool _showingFavorites = false;
   
   // === MODAL CATEGORIAS ===
   bool _showCategoryModal = false;
@@ -45,6 +52,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   // === CONTROLADORES ===
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  final KeyDebouncer _debouncer = KeyDebouncer();
   
   // === LAYOUT ===
   int _columns = 6;
@@ -75,13 +83,8 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     final width = MediaQuery.of(context).size.width;
     
     setState(() {
-      if (width >= 1920) {
-        _columns = 8;
-      } else if (width >= 1280) {
-        _columns = 7;
-      } else {
-        _columns = 5;
-      }
+      // Usa TVConstants para determinar número de colunas por largura
+      _columns = TVConstants.getColumnsForWidth(width);
       
       final padding = width * 0.02;
       final spacing = 10.0 * (_columns - 1);
@@ -109,7 +112,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     // Se está no modo de busca com campo focado
     if (_isSearchMode && _searchFocusNode.hasFocus) {
       if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
-        _closeSearch();
+        if (_debouncer.shouldProcessBack()) {
+          _closeSearch();
+        }
         return KeyEventResult.handled;
       }
       if (key == LogicalKeyboardKey.arrowDown) {
@@ -147,10 +152,12 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     } else if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter) {
       _onSelect();
     } else if (key == LogicalKeyboardKey.goBack || key == LogicalKeyboardKey.escape) {
-      if (_isSearchMode) {
-        _closeSearch();
-      } else {
-        Navigator.of(context).pushReplacementNamed('/selector');
+      if (_debouncer.shouldProcessBack()) {
+        if (_isSearchMode) {
+          _closeSearch();
+        } else {
+          Navigator.of(context).pushReplacementNamed('/selector');
+        }
       }
     } else {
       return KeyEventResult.ignored;
@@ -180,7 +187,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     } else if (key == LogicalKeyboardKey.goBack || 
                key == LogicalKeyboardKey.escape ||
                key == LogicalKeyboardKey.arrowRight) {
-      setState(() => _showCategoryModal = false);
+      if (_debouncer.shouldProcessBack()) {
+        setState(() => _showCategoryModal = false);
+      }
     } else {
       return KeyEventResult.ignored;
     }
@@ -216,9 +225,17 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
   void _onDown() {
     final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
-    final itemCount = provider.selectedCategoryName == 'Todos' 
-        ? provider.availableCategories.length - 1 // Exclui "Todos"
-        : provider.displayItems.length;
+    
+    // Determina o número de itens baseado no modo atual
+    int itemCount;
+    if (_showingFavorites) {
+      final favProvider = Provider.of<MovieFavoritesProvider>(context, listen: false);
+      itemCount = favProvider.count;
+    } else if (provider.selectedCategoryName == 'Todos') {
+      itemCount = provider.availableCategories.length - 1; // Exclui "Todos"
+    } else {
+      itemCount = provider.displayItems.length;
+    }
     final rows = (itemCount / _columns).ceil();
     
     setState(() {
@@ -263,15 +280,23 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
   void _onRight() {
     final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
-    final itemCount = provider.selectedCategoryName == 'Todos' 
-        ? provider.availableCategories.length - 1
-        : provider.displayItems.length;
+    
+    // Determina o número de itens baseado no modo atual
+    int itemCount;
+    if (_showingFavorites) {
+      final favProvider = Provider.of<MovieFavoritesProvider>(context, listen: false);
+      itemCount = favProvider.count;
+    } else if (provider.selectedCategoryName == 'Todos') {
+      itemCount = provider.availableCategories.length - 1;
+    } else {
+      itemCount = provider.displayItems.length;
+    }
     
     setState(() {
       if (_section == 0) {
         if (_headerIndex < 2) _headerIndex++;
       } else if (_section == 1) {
-        if (_filterIndex < 5) _filterIndex++; // Agora vai até 5 (buscar)
+        if (_filterIndex < 6) _filterIndex++; // Agora vai até 6 (buscar)
       } else if (_section == 2) {
         final idx = _contentRow * _columns + _contentCol;
         if (idx < itemCount - 1) {
@@ -301,15 +326,24 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     } else if (_section == 1) {
       if (_filterIndex == 0) {
         _openCategoryModal(provider);
-      } else if (_filterIndex == 4) {
+      } else if (_filterIndex == 1) {
+        // Botão Favoritos
+        setState(() {
+          _showingFavorites = !_showingFavorites;
+          _contentRow = 0;
+          _contentCol = 0;
+        });
+        _scrollController.jumpTo(0);
+      } else if (_filterIndex == 5) {
         // Botão Filtros Avançados
         _openAdvancedFilters(provider);
-      } else if (_filterIndex == 5) {
+      } else if (_filterIndex == 6) {
         // Botão Buscar
         _openSearch();
       } else {
+        // Filtros de tipo (2=todos, 3=filmes, 4=séries)
         final filters = [MovieFilterType.all, MovieFilterType.movies, MovieFilterType.series];
-        final newFilter = filters[_filterIndex - 1];
+        final newFilter = filters[_filterIndex - 2];
         if (provider.filterType != newFilter) {
           provider.setFilterType(newFilter);
           _contentRow = 0;
@@ -318,7 +352,20 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
         }
       }
     } else if (_section == 2) {
-      if (provider.selectedCategoryName == 'Todos' && !_isSearchMode) {
+      if (_showingFavorites) {
+        // Está mostrando favoritos - abre detalhe do filme favorito
+        final favProvider = context.read<MovieFavoritesProvider>();
+        final favorites = favProvider.favorites;
+        final idx = _contentRow * _columns + _contentCol;
+        if (idx < favorites.length) {
+          final movie = favorites[idx];
+          showDialog(
+            context: context,
+            barrierColor: Colors.black87,
+            builder: (_) => MovieDetailModal(movie: movie),
+          );
+        }
+      } else if (provider.selectedCategoryName == 'Todos' && !_isSearchMode) {
         // Seleciona categoria
         final cats = provider.availableCategories.where((c) => c != 'Todos').toList();
         final idx = _contentRow * _columns + _contentCol;
@@ -606,6 +653,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       return _buildSearchBar(provider);
     }
     
+    final favProvider = context.watch<MovieFavoritesProvider>();
+    final favCount = favProvider.count;
+    
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -615,12 +665,31 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           _FilterButton(
             icon: Icons.category_rounded,
             label: provider.selectedCategoryName,
-            isSelected: true,
+            isSelected: !_showingFavorites,
             isFocused: _section == 1 && _filterIndex == 0,
             isBlue: true,
             onTap: () => _openCategoryModal(provider),
           ),
           const SizedBox(width: 8),
+          
+          // Botão Favoritos
+          _FilterButton(
+            icon: _showingFavorites ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            label: 'Favoritos${favCount > 0 ? " ($favCount)" : ""}',
+            isSelected: _showingFavorites,
+            isFocused: _section == 1 && _filterIndex == 1,
+            isPink: true,
+            onTap: () {
+              setState(() {
+                _showingFavorites = !_showingFavorites;
+                _contentRow = 0;
+                _contentCol = 0;
+              });
+              _scrollController.jumpTo(0);
+            },
+          ),
+          const SizedBox(width: 8),
+          
           Container(width: 1, height: 24, color: Colors.white10),
           const SizedBox(width: 8),
           
@@ -628,25 +697,34 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           _FilterButton(
             icon: Icons.apps_rounded,
             label: 'Todos',
-            isSelected: provider.filterType == MovieFilterType.all,
-            isFocused: _section == 1 && _filterIndex == 1,
-            onTap: () => provider.setFilterType(MovieFilterType.all),
+            isSelected: provider.filterType == MovieFilterType.all && !_showingFavorites,
+            isFocused: _section == 1 && _filterIndex == 2,
+            onTap: () {
+              setState(() => _showingFavorites = false);
+              provider.setFilterType(MovieFilterType.all);
+            },
           ),
           const SizedBox(width: 8),
           _FilterButton(
             icon: Icons.movie_rounded,
             label: 'Filmes',
-            isSelected: provider.filterType == MovieFilterType.movies,
-            isFocused: _section == 1 && _filterIndex == 2,
-            onTap: () => provider.setFilterType(MovieFilterType.movies),
+            isSelected: provider.filterType == MovieFilterType.movies && !_showingFavorites,
+            isFocused: _section == 1 && _filterIndex == 3,
+            onTap: () {
+              setState(() => _showingFavorites = false);
+              provider.setFilterType(MovieFilterType.movies);
+            },
           ),
           const SizedBox(width: 8),
           _FilterButton(
             icon: Icons.tv_rounded,
             label: 'Séries',
-            isSelected: provider.filterType == MovieFilterType.series,
-            isFocused: _section == 1 && _filterIndex == 3,
-            onTap: () => provider.setFilterType(MovieFilterType.series),
+            isSelected: provider.filterType == MovieFilterType.series && !_showingFavorites,
+            isFocused: _section == 1 && _filterIndex == 4,
+            onTap: () {
+              setState(() => _showingFavorites = false);
+              provider.setFilterType(MovieFilterType.series);
+            },
           ),
           const SizedBox(width: 8),
           Container(width: 1, height: 24, color: Colors.white10),
@@ -657,7 +735,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
             icon: Icons.tune_rounded,
             label: 'Avançado',
             isSelected: false,
-            isFocused: _section == 1 && _filterIndex == 4,
+            isFocused: _section == 1 && _filterIndex == 5,
             isOrange: true,
             onTap: () => _openAdvancedFilters(provider),
           ),
@@ -668,7 +746,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
             icon: Icons.search_rounded,
             label: 'Buscar',
             isSelected: false,
-            isFocused: _section == 1 && _filterIndex == 5,
+            isFocused: _section == 1 && _filterIndex == 6,
             isGreen: true,
             onTap: _openSearch,
           ),
@@ -863,6 +941,11 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       return _buildSearchResults(provider);
     }
     
+    // Se está mostrando favoritos
+    if (_showingFavorites) {
+      return _buildFavoritesGrid();
+    }
+    
     // Se categoria é "Todos", mostra cards de categorias
     if (provider.selectedCategoryName == 'Todos') {
       return _buildCategoryCards(provider);
@@ -870,6 +953,89 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     
     // Senão, mostra grid de filmes/séries
     return _buildContentGrid(provider);
+  }
+  
+  /// Grid de favoritos
+  Widget _buildFavoritesGrid() {
+    final favProvider = context.watch<MovieFavoritesProvider>();
+    final favorites = favProvider.favorites;
+    
+    if (favorites.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.favorite_border_rounded, color: Colors.white24, size: 64),
+            const SizedBox(height: 16),
+            const Text(
+              'Nenhum favorito ainda',
+              style: TextStyle(color: Colors.white54, fontSize: 18),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Adicione filmes e séries aos seus favoritos',
+              style: TextStyle(color: Colors.white38, fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    return Column(
+      children: [
+        // Header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Row(
+            children: [
+              const Icon(Icons.favorite_rounded, color: Color(0xFFE91E63), size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Meus Favoritos (${favorites.length})',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        // Grid
+        Expanded(
+          child: GridView.builder(
+            controller: _scrollController,
+            padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: _columns,
+              childAspectRatio: _cardWidth / _cardHeight,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: favorites.length,
+            itemBuilder: (context, index) {
+              final movie = favorites[index];
+              final row = index ~/ _columns;
+              final col = index % _columns;
+              final isFocused = _section == 2 && _contentRow == row && _contentCol == col;
+              
+              // Converte Movie para CatalogDisplayItem
+              final displayItem = CatalogDisplayItem(
+                type: movie.type == MovieType.series ? DisplayItemType.series : DisplayItemType.movie,
+                movie: movie,
+              );
+              
+              return _ContentCard(
+                item: displayItem,
+                isFocused: isFocused,
+                onTap: () => _showDetail(displayItem),
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
   
   /// Resultados da busca
@@ -1260,6 +1426,7 @@ class _FilterButton extends StatelessWidget {
   final bool isBlue;
   final bool isGreen;
   final bool isOrange;
+  final bool isPink;
   final VoidCallback onTap;
 
   const _FilterButton({
@@ -1270,6 +1437,7 @@ class _FilterButton extends StatelessWidget {
     this.isBlue = false,
     this.isGreen = false,
     this.isOrange = false,
+    this.isPink = false,
     required this.onTap,
   });
 
@@ -1284,6 +1452,8 @@ class _FilterButton extends StatelessWidget {
         gradientColors = [const Color(0xFF10B981), const Color(0xFF34D399)];
       } else if (isOrange) {
         gradientColors = [const Color(0xFFFF8C00), const Color(0xFFFFAA33)];
+      } else if (isPink) {
+        gradientColors = [const Color(0xFFE91E63), const Color(0xFFFF4081)];
       } else {
         gradientColors = [const Color(0xFFE50914), const Color(0xFFFF2020)];
       }
@@ -1291,6 +1461,8 @@ class _FilterButton extends StatelessWidget {
       gradientColors = [const Color(0xFF10B981), const Color(0xFF34D399)];
     } else if (isOrange && isFocused) {
       gradientColors = [const Color(0xFFFF8C00), const Color(0xFFFFAA33)];
+    } else if (isPink && isFocused) {
+      gradientColors = [const Color(0xFFE91E63), const Color(0xFFFF4081)];
     }
     
     return GestureDetector(
@@ -1302,8 +1474,12 @@ class _FilterButton extends StatelessWidget {
           color: gradientColors == null ? Colors.white10 : null,
           borderRadius: BorderRadius.circular(20),
           border: isFocused ? Border.all(color: const Color(0xFFFFD700), width: 2) : null,
-          boxShadow: (isGreen && isFocused) || (isOrange && isFocused) ? [
-            BoxShadow(color: isOrange ? const Color(0xFFFF8C00).withOpacity(0.5) : const Color(0xFF10B981).withOpacity(0.5), blurRadius: 8),
+          boxShadow: (isGreen && isFocused) || (isOrange && isFocused) || (isPink && isFocused) ? [
+            BoxShadow(color: isPink 
+                ? const Color(0xFFE91E63).withOpacity(0.5)
+                : isOrange 
+                    ? const Color(0xFFFF8C00).withOpacity(0.5) 
+                    : const Color(0xFF10B981).withOpacity(0.5), blurRadius: 8),
           ] : null,
         ),
         child: Row(
@@ -1315,7 +1491,7 @@ class _FilterButton extends StatelessWidget {
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 12,
-                fontWeight: isSelected || (isGreen && isFocused) || (isOrange && isFocused) ? FontWeight.bold : FontWeight.normal,
+                fontWeight: isSelected || (isGreen && isFocused) || (isOrange && isFocused) || (isPink && isFocused) ? FontWeight.bold : FontWeight.normal,
               ),
             ),
             if (isBlue) ...[

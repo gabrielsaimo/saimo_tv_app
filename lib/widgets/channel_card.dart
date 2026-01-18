@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/channel.dart';
 import '../utils/theme.dart';
+import '../utils/tv_constants.dart';
 
 /// Card de canal otimizado para TV com navegação D-Pad
 class ChannelCard extends StatefulWidget {
@@ -79,17 +81,21 @@ class _ChannelCardState extends State<ChannelCard>
       focusNode: _focusNode,
       autofocus: widget.autofocus,
       onKeyEvent: (node, event) {
-        if (event.logicalKey.keyLabel == 'Select' ||
-            event.logicalKey.keyLabel == 'Enter') {
-          widget.onPressed?.call();
-          return KeyEventResult.handled;
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.gameButtonA) {
+            HapticFeedback.selectionClick();
+            widget.onPressed?.call();
+            return KeyEventResult.handled;
+          }
         }
         return KeyEventResult.ignored;
       },
       child: GestureDetector(
         onTap: widget.onPressed,
         onLongPress: widget.onLongPress,
-        child: AnimatedBuilder(
+        child: TVAnimatedBuilder(
           animation: _scaleAnim,
           builder: (context, child) {
             return Transform.scale(
@@ -160,19 +166,19 @@ class _ChannelCardState extends State<ChannelCard>
         
         // Número do canal
         Positioned(
-          top: 8,
-          left: 8,
+          top: TVConstants.paddingS,
+          left: TVConstants.paddingS,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: TVConstants.paddingS, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.7),
-              borderRadius: BorderRadius.circular(6),
+              color: Colors.black.withOpacity(0.8),
+              borderRadius: BorderRadius.circular(TVConstants.radiusS),
             ),
             child: Text(
               '${widget.channel.channelNumber}',
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 12,
+                fontSize: TVConstants.fontS,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -182,20 +188,20 @@ class _ChannelCardState extends State<ChannelCard>
         // Favorito
         if (widget.isFavorite)
           Positioned(
-            top: 8,
-            right: 8,
+            top: TVConstants.paddingS,
+            right: TVConstants.paddingS,
             child: GestureDetector(
               onTap: widget.onFavoriteToggle,
               child: Container(
-                padding: const EdgeInsets.all(6),
+                padding: const EdgeInsets.all(TVConstants.paddingS),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
+                  color: Colors.black.withOpacity(0.8),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.star,
                   color: SaimoTheme.favorite,
-                  size: 18,
+                  size: TVConstants.iconS,
                 ),
               ),
             ),
@@ -222,7 +228,7 @@ class _ChannelCardState extends State<ChannelCard>
 
   Widget _buildInfo() {
     return Padding(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(TVConstants.paddingM),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -230,22 +236,22 @@ class _ChannelCardState extends State<ChannelCard>
           Text(
             widget.channel.name,
             style: TextStyle(
-              color: _isFocused ? SaimoTheme.primary : SaimoTheme.textPrimary,
-              fontSize: 16,
+              color: _isFocused ? TVConstants.focusColor : SaimoTheme.textPrimary,
+              fontSize: TVConstants.fontM,
               fontWeight: FontWeight.w600,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
           
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           
           // Programa atual ou categoria
           Text(
             widget.currentProgram ?? widget.channel.category,
-            style: const TextStyle(
-              color: SaimoTheme.textSecondary,
-              fontSize: 12,
+            style: TextStyle(
+              color: Colors.white.withOpacity(TVConstants.textSecondaryOpacity),
+              fontSize: TVConstants.fontS,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -277,20 +283,4 @@ class _ChannelCardState extends State<ChannelCard>
   }
 }
 
-/// Builder animado
-class AnimatedBuilder extends AnimatedWidget {
-  final Widget Function(BuildContext context, Widget? child) builder;
-  final Widget? child;
-
-  const AnimatedBuilder({
-    super.key,
-    required Animation<double> animation,
-    required this.builder,
-    this.child,
-  }) : super(listenable: animation);
-
-  @override
-  Widget build(BuildContext context) {
-    return builder(context, child);
-  }
-}
+// AnimatedBuilder removido - usar TVAnimatedBuilder de tv_constants.dart

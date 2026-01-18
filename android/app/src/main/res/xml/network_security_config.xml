@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Permite tráfego HTTP (cleartext) para todos os domínios -->
+    <!-- Necessário para streaming IPTV que usa HTTP -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    
+    <!-- Domínios específicos de IPTV que usam HTTP -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">coneasy.lat</domain>
+        <domain includeSubdomains="true">arrascacrf.site</domain>
+        <domain includeSubdomains="true">xbacon.site</domain>
+        <domain includeSubdomains="true">cdn.arrascacrf.site</domain>
+    </domain-config>
+</network-security-config>

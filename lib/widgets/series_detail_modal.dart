@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../models/movie.dart';
 import '../providers/lazy_movies_provider.dart';
+import '../utils/tv_constants.dart';
 import 'movie_detail_modal.dart';
 
 /// Modal completo de detalhes de série com TODOS os dados TMDB
@@ -101,16 +102,19 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
     // Se botão fechar está focado
     if (_closeButtonFocused) {
       if (key == LogicalKeyboardKey.arrowDown || key == LogicalKeyboardKey.arrowLeft) {
+        HapticFeedback.selectionClick();
         setState(() {
           _closeButtonFocused = false;
           _currentSection = 0;
           _selectedButton = 1; // Vai para botão Fechar nos botões de ação
         });
         return KeyEventResult.handled;
-      } else if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter) {
+      } else if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.gameButtonA) {
+        HapticFeedback.mediumImpact();
         Navigator.of(context).pop();
         return KeyEventResult.handled;
       } else if (key == LogicalKeyboardKey.goBack || key == LogicalKeyboardKey.escape) {
+        HapticFeedback.lightImpact();
         Navigator.of(context).pop();
         return KeyEventResult.handled;
       }
@@ -118,21 +122,27 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
     }
 
     if (key == LogicalKeyboardKey.arrowUp) {
+      HapticFeedback.selectionClick();
       _navigateUp();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.arrowDown) {
+      HapticFeedback.selectionClick();
       _navigateDown();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.arrowLeft) {
+      HapticFeedback.selectionClick();
       _navigateLeft();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.arrowRight) {
+      HapticFeedback.selectionClick();
       _navigateRight();
       return KeyEventResult.handled;
-    } else if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter) {
+    } else if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.gameButtonA) {
+      HapticFeedback.mediumImpact();
       _handleSelect();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.goBack || key == LogicalKeyboardKey.escape) {
+      HapticFeedback.lightImpact();
       Navigator.of(context).pop();
       return KeyEventResult.handled;
     }
