@@ -315,29 +315,36 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
   }
 
   void _scrollToEpisode(int index) {
-    // Aguarda um frame para garantir que o controller está attached
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_episodesScrollController.hasClients) return;
-      
-      // Altura de cada item de episódio (padding + margem)
-      const itemHeight = 52.0;
-      
-      // Calcula posição para centralizar o item na viewport
-      final viewportHeight = _episodesScrollController.position.viewportDimension;
-      final maxScroll = _episodesScrollController.position.maxScrollExtent;
-      
-      // Centraliza o item selecionado
-      final targetOffset = (index * itemHeight) - (viewportHeight / 2) + (itemHeight / 2);
-      
-      _episodesScrollController.animateTo(
-        targetOffset.clamp(0.0, maxScroll),
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOut,
-      );
-    });
+    // Força scroll imediato e depois com delay para garantir
+    _doEpisodeScroll(index);
     
     // Também garante que a seção de episódios esteja visível no scroll principal
     _scrollToSection(3);
+    
+    // Repete o scroll após um delay para garantir que o controller está ready
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (mounted) _doEpisodeScroll(index);
+    });
+  }
+  
+  void _doEpisodeScroll(int index) {
+    if (!_episodesScrollController.hasClients) return;
+    
+    try {
+      // Altura de cada item de episódio (padding 12*2 + margem 2*2 + conteúdo ~24)
+      const itemHeight = 56.0;
+      
+      final viewportHeight = _episodesScrollController.position.viewportDimension;
+      final maxScroll = _episodesScrollController.position.maxScrollExtent;
+      
+      // Centraliza o item selecionado na viewport
+      final itemCenter = (index * itemHeight) + (itemHeight / 2);
+      final targetOffset = itemCenter - (viewportHeight / 2);
+      
+      _episodesScrollController.jumpTo(targetOffset.clamp(0.0, maxScroll));
+    } catch (e) {
+      debugPrint('Erro ao fazer scroll do episódio: $e');
+    }
   }
 
   void _handleSelect() {
@@ -1153,9 +1160,9 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
         ),
         const SizedBox(height: 12),
         
-        // Lista de episódios - altura maior para melhor visualização
+        // Lista de episódios com altura fixa por item para scroll preciso
         SizedBox(
-          height: 280,
+          height: 300, // Mostra ~5 episódios visíveis
           child: episodes.isEmpty
               ? Center(
                   child: Text(
@@ -1166,6 +1173,7 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
               : ListView.builder(
                   controller: _episodesScrollController,
                   itemCount: episodes.length,
+                  itemExtent: 56.0, // Altura fixa para scroll preciso
                   itemBuilder: (context, index) {
                     final episode = episodes[index];
                     final isFocused = _currentSection == 3 && _selectedEpisodeIndex == index;
@@ -1175,12 +1183,9 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
                         final enrichedEpisode = _createEnrichedEpisode(episode);
                         Navigator.of(context).pushNamed('/movie-player', arguments: enrichedEpisode);
                       },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        margin: const EdgeInsets.symmetric(vertical: 2),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        transform: isFocused ? (Matrix4.identity()..scale(1.02)) : Matrix4.identity(),
-                        transformAlignment: Alignment.center,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         decoration: BoxDecoration(
                           gradient: isFocused 
                               ? const LinearGradient(colors: [Color(0xFFE50914), Color(0xFFB00710)])
@@ -1189,26 +1194,30 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
                           borderRadius: BorderRadius.circular(8),
                           border: isFocused
                               ? Border.all(color: const Color(0xFFFFD700), width: 3)
-                              : null,
+                              : Border.all(color: Colors.transparent, width: 3),
                           boxShadow: isFocused
-                              ? [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.5), blurRadius: 12, spreadRadius: 2)]
+                              ? [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.6), blurRadius: 16, spreadRadius: 2)]
                               : null,
                         ),
                         child: Row(
                           children: [
+                            // Número do episódio com destaque
                             Container(
-                              width: 36,
-                              height: 36,
+                              width: 40,
+                              height: 40,
                               decoration: BoxDecoration(
                                 color: isFocused ? Colors.white24 : Colors.white10,
-                                borderRadius: BorderRadius.circular(18),
+                                borderRadius: BorderRadius.circular(20),
+                                border: isFocused 
+                                    ? Border.all(color: Colors.white, width: 2)
+                                    : null,
                               ),
                               child: Center(
                                 child: Text(
                                   '${episode.episode ?? index + 1}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: Colors.white,
-                                    fontSize: 14,
+                                    fontSize: isFocused ? 16 : 14,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),

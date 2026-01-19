@@ -10,6 +10,8 @@ import '../widgets/movie_detail_modal.dart';
 import '../widgets/series_modal_optimized.dart';
 import '../widgets/advanced_filters_modal.dart';
 import '../services/tmdb_image_service.dart';
+import '../services/trending_service.dart';
+import '../services/json_lazy_service.dart';
 import '../utils/tv_constants.dart';
 import '../utils/key_debouncer.dart';
 
@@ -27,12 +29,21 @@ class CatalogScreenLite extends StatefulWidget {
 
 class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   // === NAVEGAÇÃO ===
-  // Seções: 0=header, 1=filtros, 2=conteúdo
+  // Seções: 0=header, 1=filtros, 2=tendências hoje, 3=tendências semana, 4=categorias
   int _section = 1;
   int _headerIndex = 0; // 0=voltar, 1=tv ao vivo, 2=config
   int _filterIndex = 0; // 0=categorias, 1=favoritos, 2=todos, 3=filmes, 4=séries, 5=avançado, 6=buscar
   int _contentRow = 0;
   int _contentCol = 0;
+  
+  // === TENDÊNCIAS ===
+  List<TrendingItem> _trendingToday = [];
+  List<TrendingItem> _trendingWeek = [];
+  bool _loadingTrending = true;
+  int _trendingTodayIndex = 0;
+  int _trendingWeekIndex = 0;
+  final ScrollController _trendingTodayScroll = ScrollController();
+  final ScrollController _trendingWeekScroll = ScrollController();
   
   // === MODO FAVORITOS ===
   bool _showingFavorites = false;
@@ -76,6 +87,33 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     if (provider.selectedCategoryName != 'Todos') {
       await provider.selectCategory('Todos');
     }
+    
+    // Carrega tendências do TMDB em paralelo
+    _loadTrending();
+  }
+  
+  Future<void> _loadTrending() async {
+    if (!mounted) return;
+    
+    setState(() => _loadingTrending = true);
+    
+    try {
+      final service = JsonLazyService();
+      final results = await TrendingService.getAllTrending(service);
+      
+      if (mounted) {
+        setState(() {
+          _trendingToday = results.today;
+          _trendingWeek = results.week;
+          _loadingTrending = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar tendências: $e');
+      if (mounted) {
+        setState(() => _loadingTrending = false);
+      }
+    }
   }
 
   void _calculateLayout() {
@@ -101,6 +139,8 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _searchDebounce?.cancel();
+    _trendingTodayScroll.dispose();
+    _trendingWeekScroll.dispose();
     super.dispose();
   }
 
@@ -119,7 +159,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       }
       if (key == LogicalKeyboardKey.arrowDown) {
         _searchFocusNode.unfocus();
-        setState(() => _section = 2);
+        setState(() => _section = 4);
         _focusNode.requestFocus();
         return KeyEventResult.handled;
       }
@@ -211,13 +251,31 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
   void _onUp() {
     setState(() {
-      if (_section == 2) {
+      if (_section == 4) {
+        // Na grid de categorias/conteúdo
         if (_contentRow > 0) {
           _contentRow--;
           _scrollToRow();
         } else {
+          // Sobe para tendências da semana (se existir) ou de hoje
+          if (_trendingWeek.isNotEmpty) {
+            _section = 3;
+          } else if (_trendingToday.isNotEmpty) {
+            _section = 2;
+          } else {
+            _section = 1;
+          }
+        }
+      } else if (_section == 3) {
+        // Na seção de tendências da semana
+        if (_trendingToday.isNotEmpty) {
+          _section = 2;
+        } else {
           _section = 1;
         }
+      } else if (_section == 2) {
+        // Na seção de tendências de hoje
+        _section = 1;
       } else if (_section == 1) {
         _section = 0;
       }
@@ -243,10 +301,34 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       if (_section == 0) {
         _section = 1;
       } else if (_section == 1) {
-        _section = 2;
+        // Desce para tendências de hoje (se existir)
+        if (_trendingToday.isNotEmpty) {
+          _section = 2;
+          _trendingTodayIndex = 0;
+        } else if (_trendingWeek.isNotEmpty) {
+          _section = 3;
+          _trendingWeekIndex = 0;
+        } else {
+          _section = 4;
+          _contentRow = 0;
+          _contentCol = 0;
+        }
+      } else if (_section == 2) {
+        // De tendências de hoje para tendências da semana
+        if (_trendingWeek.isNotEmpty) {
+          _section = 3;
+          _trendingWeekIndex = 0;
+        } else {
+          _section = 4;
+          _contentRow = 0;
+          _contentCol = 0;
+        }
+      } else if (_section == 3) {
+        // De tendências da semana para categorias
+        _section = 4;
         _contentRow = 0;
         _contentCol = 0;
-      } else if (_contentRow < rows - 1) {
+      } else if (_section == 4 && _contentRow < rows - 1) {
         _contentRow++;
         _scrollToRow();
       }
@@ -266,6 +348,22 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           _openCategoryModal(provider);
         }
       } else if (_section == 2) {
+        // Tendências de hoje
+        if (_trendingTodayIndex > 0) {
+          _trendingTodayIndex--;
+          _scrollTrendingToday();
+        } else {
+          _openCategoryModal(provider);
+        }
+      } else if (_section == 3) {
+        // Tendências da semana
+        if (_trendingWeekIndex > 0) {
+          _trendingWeekIndex--;
+          _scrollTrendingWeek();
+        } else {
+          _openCategoryModal(provider);
+        }
+      } else if (_section == 4) {
         if (_contentCol > 0) {
           _contentCol--;
         } else if (_contentRow > 0) {
@@ -299,6 +397,18 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       } else if (_section == 1) {
         if (_filterIndex < 6) _filterIndex++; // Agora vai até 6 (buscar)
       } else if (_section == 2) {
+        // Tendências de hoje
+        if (_trendingTodayIndex < _trendingToday.length - 1) {
+          _trendingTodayIndex++;
+          _scrollTrendingToday();
+        }
+      } else if (_section == 3) {
+        // Tendências da semana
+        if (_trendingWeekIndex < _trendingWeek.length - 1) {
+          _trendingWeekIndex++;
+          _scrollTrendingWeek();
+        }
+      } else if (_section == 4) {
         final idx = _contentRow * _columns + _contentCol;
         if (idx < itemCount - 1) {
           if (_contentCol < _columns - 1) {
@@ -311,6 +421,26 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
         }
       }
     });
+  }
+  
+  void _scrollTrendingToday() {
+    if (!_trendingTodayScroll.hasClients) return;
+    final offset = _trendingTodayIndex * (_cardWidth + 12);
+    _trendingTodayScroll.animateTo(
+      offset.clamp(0.0, _trendingTodayScroll.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOut,
+    );
+  }
+  
+  void _scrollTrendingWeek() {
+    if (!_trendingWeekScroll.hasClients) return;
+    final offset = _trendingWeekIndex * (_cardWidth + 12);
+    _trendingWeekScroll.animateTo(
+      offset.clamp(0.0, _trendingWeekScroll.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOut,
+    );
   }
 
   void _onSelect() {
@@ -353,6 +483,16 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
         }
       }
     } else if (_section == 2) {
+      // Tendências de hoje
+      if (_trendingTodayIndex < _trendingToday.length) {
+        _showTrendingDetail(_trendingToday[_trendingTodayIndex]);
+      }
+    } else if (_section == 3) {
+      // Tendências da semana
+      if (_trendingWeekIndex < _trendingWeek.length) {
+        _showTrendingDetail(_trendingWeek[_trendingWeekIndex]);
+      }
+    } else if (_section == 4) {
       if (_showingFavorites) {
         // Está mostrando favoritos - abre detalhe do filme favorito
         final favProvider = context.read<MovieFavoritesProvider>();
@@ -372,6 +512,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
         final idx = _contentRow * _columns + _contentCol;
         if (idx < cats.length) {
           provider.selectCategory(cats[idx]);
+          setState(() {
+            _showingFavorites = false; // Sai do modo favoritos
+          });
           _contentRow = 0;
           _contentCol = 0;
           _scrollController.jumpTo(0);
@@ -1019,7 +1162,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
               final movie = favorites[index];
               final row = index ~/ _columns;
               final col = index % _columns;
-              final isFocused = _section == 2 && _contentRow == row && _contentCol == col;
+              final isFocused = _section == 4 && _contentRow == row && _contentCol == col;
               
               // Converte Movie para CatalogDisplayItem
               final displayItem = CatalogDisplayItem(
@@ -1158,7 +1301,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
             itemBuilder: (context, index) {
               final row = index ~/ _columns;
               final col = index % _columns;
-              final isFocused = _section == 2 && _contentRow == row && _contentCol == col;
+              final isFocused = _section == 4 && _contentRow == row && _contentCol == col;
               
               return _ContentCard(
                 item: items[index],
@@ -1174,42 +1317,208 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
   Widget _buildCategoryCards(LazyMoviesProvider provider) {
     final categories = provider.availableCategories.where((c) => c != 'Todos').toList();
+    final hasTrendingToday = _trendingToday.isNotEmpty || _loadingTrending;
+    final hasTrendingWeek = _trendingWeek.isNotEmpty || _loadingTrending;
     
-    if (categories.isEmpty) {
-      return const Center(
-        child: Text('Nenhuma categoria', style: TextStyle(color: Colors.white38)),
-      );
-    }
-    
-    return GridView.builder(
+    return ListView(
       controller: _scrollController,
       padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: _columns,
-        childAspectRatio: 16 / 9,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-      ),
-      itemCount: categories.length,
-      itemBuilder: (context, index) {
-        final category = categories[index];
-        final row = index ~/ _columns;
-        final col = index % _columns;
-        final isFocused = _section == 2 && _contentRow == row && _contentCol == col;
+      children: [
+        // === TENDÊNCIAS DE HOJE ===
+        if (hasTrendingToday) ...[
+          _buildTrendingSection(
+            title: '🔥 Tendências de Hoje',
+            items: _trendingToday,
+            isLoading: _loadingTrending,
+            isFocused: _section == 2,
+            selectedIndex: _trendingTodayIndex,
+            scrollController: _trendingTodayScroll,
+          ),
+          const SizedBox(height: 24),
+        ],
         
-        return _CategoryCard(
-          name: category,
-          isFocused: isFocused,
-          onTap: () {
-            provider.selectCategory(category);
-            setState(() {
-              _contentRow = 0;
-              _contentCol = 0;
-            });
-            _scrollController.jumpTo(0);
-          },
+        // === TENDÊNCIAS DA SEMANA ===
+        if (hasTrendingWeek) ...[
+          _buildTrendingSection(
+            title: '📅 Tendências da Semana',
+            items: _trendingWeek,
+            isLoading: _loadingTrending,
+            isFocused: _section == 3,
+            selectedIndex: _trendingWeekIndex,
+            scrollController: _trendingWeekScroll,
+          ),
+          const SizedBox(height: 24),
+        ],
+        
+        // === CATEGORIAS ===
+        if (categories.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.only(left: 8, bottom: 12),
+            child: Text(
+              '📺 Categorias',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: _columns,
+              childAspectRatio: 16 / 9,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: categories.length,
+            itemBuilder: (context, index) {
+              final category = categories[index];
+              final row = index ~/ _columns;
+              final col = index % _columns;
+              final isFocused = _section == 4 && _contentRow == row && _contentCol == col;
+              
+              return _CategoryCard(
+                name: category,
+                isFocused: isFocused,
+                onTap: () {
+                  provider.selectCategory(category);
+                  setState(() {
+                    _showingFavorites = false;
+                    _contentRow = 0;
+                    _contentCol = 0;
+                  });
+                  _scrollController.jumpTo(0);
+                },
+              );
+            },
+          ),
+        ],
+      ],
+    );
+  }
+  
+  Widget _buildTrendingSection({
+    required String title,
+    required List<TrendingItem> items,
+    required bool isLoading,
+    required bool isFocused,
+    required int selectedIndex,
+    required ScrollController scrollController,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 8, bottom: 12),
+          child: Row(
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              if (isFocused) ...[
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFD700).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    '← → navegar  •  OK selecionar',
+                    style: TextStyle(color: Color(0xFFFFD700), fontSize: 10),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        SizedBox(
+          height: _cardHeight + 40,
+          child: isLoading
+              ? _buildTrendingLoading()
+              : items.isEmpty
+                  ? const Center(child: Text('Sem tendências disponíveis', style: TextStyle(color: Colors.white38)))
+                  : ListView.builder(
+                      controller: scrollController,
+                      scrollDirection: Axis.horizontal,
+                      itemCount: items.length,
+                      itemBuilder: (context, index) {
+                        final item = items[index];
+                        final isSelected = isFocused && selectedIndex == index;
+                        
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: _TrendingCard(
+                            item: item,
+                            width: _cardWidth,
+                            height: _cardHeight,
+                            isFocused: isSelected,
+                            onTap: () => _showTrendingDetail(item),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildTrendingLoading() {
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      itemCount: 6,
+      itemBuilder: (context, index) {
+        return Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: Container(
+            width: _cardWidth,
+            height: _cardHeight,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFFE50914),
+                strokeWidth: 2,
+              ),
+            ),
+          ),
         );
       },
+    );
+  }
+  
+  void _showTrendingDetail(TrendingItem item) {
+    final movie = item.localMovie;
+    
+    if (movie.type == MovieType.series || item.isSeries) {
+      // Tenta encontrar a série agrupada
+      final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
+      final groupedSeries = provider.getGroupedSeries(movie.seriesName ?? movie.name);
+      
+      if (groupedSeries != null) {
+        showDialog(
+          context: context,
+          barrierColor: Colors.black87,
+          builder: (_) => SeriesModalOptimized(series: groupedSeries),
+        );
+        return;
+      }
+    }
+    
+    // Filme ou série não agrupada
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (_) => MovieDetailModal(movie: movie),
     );
   }
 
@@ -1236,7 +1545,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
         final item = items[index];
         final row = index ~/ _columns;
         final col = index % _columns;
-        final isFocused = _section == 2 && _contentRow == row && _contentCol == col;
+        final isFocused = _section == 4 && _contentRow == row && _contentCol == col;
         
         return _ContentCard(
           item: item,
@@ -1501,6 +1810,164 @@ class _FilterButton extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TrendingCard extends StatelessWidget {
+  final TrendingItem item;
+  final double width;
+  final double height;
+  final bool isFocused;
+  final VoidCallback onTap;
+
+  const _TrendingCard({
+    required this.item,
+    required this.width,
+    required this.height,
+    required this.isFocused,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: width,
+        height: height + 40,
+        transform: isFocused 
+            ? (Matrix4.identity()..scale(1.05))
+            : Matrix4.identity(),
+        transformAlignment: Alignment.center,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Poster
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: isFocused 
+                      ? Border.all(color: const Color(0xFFFFD700), width: 3)
+                      : null,
+                  boxShadow: isFocused
+                      ? [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.4), blurRadius: 12)]
+                      : [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 6)],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Imagem do poster
+                      item.posterUrl != null
+                          ? Image.network(
+                              item.posterUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => _buildPlaceholder(),
+                            )
+                          : _buildPlaceholder(),
+                      
+                      // Gradiente inferior
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: Container(
+                          height: 60,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
+                            ),
+                          ),
+                        ),
+                      ),
+                      
+                      // Badge de tipo (série ou filme)
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: item.isSeries 
+                                ? const Color(0xFF8B5CF6)
+                                : const Color(0xFFE50914),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.isSeries ? 'SÉRIE' : 'FILME',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      
+                      // Rating
+                      if (item.rating > 0)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.7),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.star, color: Color(0xFFFFD700), size: 12),
+                                const SizedBox(width: 2),
+                                Text(
+                                  item.rating.toStringAsFixed(1),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            
+            // Título
+            const SizedBox(height: 6),
+            Text(
+              item.localMovie.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isFocused ? const Color(0xFFFFD700) : Colors.white,
+                fontSize: 12,
+                fontWeight: isFocused ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildPlaceholder() {
+    return Container(
+      color: Colors.grey[850],
+      child: const Center(
+        child: Icon(Icons.movie, color: Colors.white24, size: 40),
       ),
     );
   }
