@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/movie.dart';
 import '../services/json_lazy_service.dart';
 import '../services/storage_service.dart';
+import '../services/trending_service.dart';
 
 /// Provider otimizado com LAZY LOADING por categoria
 /// 
@@ -99,6 +100,7 @@ class LazyMoviesProvider with ChangeNotifier {
 
   /// Ordem preferencial das categorias
   static const List<String> _categoryOrder = [
+    '🌟 Primeiras',
     'Lançamentos 2026',
     'Lançamentos 2025',
     'Netflix',
@@ -191,7 +193,7 @@ class LazyMoviesProvider with ChangeNotifier {
       return a.compareTo(b);
     });
     
-    return ['Todos', ...names];
+    return ['Todos', '🌟 Primeiras', '📊 Tendências', ...names];
   }
 
   /// Informações das categorias com contagem
@@ -653,7 +655,11 @@ class LazyMoviesProvider with ChangeNotifier {
     if (!forceReload && categoryName == _selectedCategoryName) {
       if (categoryName == 'Todos' && _loadedMovies.isNotEmpty) {
         return;
-      } else if (categoryName != 'Todos' && _currentCategoryData != null) {
+      } else if (categoryName == '🌟 Primeiras' && _loadedMovies.isNotEmpty) {
+        return;
+      } else if (categoryName == '📊 Tendências' && _loadedMovies.isNotEmpty) {
+        return;
+      } else if (categoryName != 'Todos' && categoryName != '🌟 Primeiras' && categoryName != '📊 Tendências' && _currentCategoryData != null) {
         return;
       }
     }
@@ -667,6 +673,20 @@ class LazyMoviesProvider with ChangeNotifier {
       _selectedCategoryId = null;
       _currentCategoryData = null;
       await _loadAllCategoriesSample();
+      return;
+    }
+    
+    if (categoryName == '🌟 Primeiras') {
+      _selectedCategoryId = 'primeiras';
+      _currentCategoryData = null;
+      await _loadPrimeirasCategory();
+      return;
+    }
+    
+    if (categoryName == '📊 Tendências') {
+      _selectedCategoryId = 'trending';
+      _currentCategoryData = null;
+      await _loadTrendingCategory();
       return;
     }
 
@@ -769,6 +789,93 @@ class LazyMoviesProvider with ChangeNotifier {
       debugPrint('📂 Todos (Streaming): ${_loadedMovies.length} filmes, ${_loadedSeries.length} séries de ${streamingCategories.length} categorias');
     } catch (e) {
       _categoryError = 'Erro ao carregar: $e';
+    } finally {
+      _isLoadingCategory = false;
+      notifyListeners();
+    }
+  }
+
+  /// Carrega a categoria especial "🌟 Primeiras" com os primeiros filmes/séries de cada categoria
+  Future<void> _loadPrimeirasCategory() async {
+    _isLoadingCategory = true;
+    _categoryError = null;
+    notifyListeners();
+
+    try {
+      // Carrega um item de cada categoria
+      for (final cat in _categories) {
+        if (cat.isAdult && !_showAdultContent) continue; // Pula categorias adultas
+        
+        try {
+          final data = await _service.loadCategory(cat.id);
+          if (data != null) {
+            // Pega o primeiro filme
+            if (data.movies.isNotEmpty && !data.movies[0].isAdult) {
+              _loadedMovies.add(data.movies[0].copyWith(category: cat.name));
+            }
+            // Pega a primeira série (episódio)
+            if (data.series.isNotEmpty && !data.series[0].isAdult) {
+              _loadedSeries.add(data.series[0].copyWith(category: cat.name));
+            }
+          }
+        } catch (e) {
+          debugPrint('⚠️ Erro ao carregar primeira de ${cat.name}: $e');
+        }
+      }
+      
+      // Limita a 20 itens total
+      if (_loadedMovies.length + _loadedSeries.length > 20) {
+        final total = _loadedMovies.length + _loadedSeries.length;
+        final ratio = 20 / total;
+        _loadedMovies = (_loadedMovies.take((_loadedMovies.length * ratio).toInt()).toList());
+        _loadedSeries = (_loadedSeries.take((_loadedSeries.length * ratio).toInt()).toList());
+      }
+      
+      debugPrint('⭐ Primeiras: ${_loadedMovies.length} filmes, ${_loadedSeries.length} séries');
+    } catch (e) {
+      _categoryError = 'Erro ao carregar: $e';
+    } finally {
+      _isLoadingCategory = false;
+      notifyListeners();
+    }
+  }
+
+  /// Carrega a categoria de Tendências combinando hoje e semana
+  Future<void> _loadTrendingCategory() async {
+    _isLoadingCategory = true;
+    _categoryError = null;
+    notifyListeners();
+
+    try {
+      // Carrega tendências de hoje
+      try {
+        final results = await TrendingService.getAllTrending(_service);
+        
+        // Adiciona tendências de hoje
+        for (final item in results.today) {
+          try {
+            _loadedMovies.add(item.localMovie.copyWith(category: '🔥 Tendências'));
+          } catch (e) {
+            debugPrint('⚠️ Erro ao processar trending item: $e');
+          }
+        }
+        
+        // Adiciona tendências da semana
+        for (final item in results.week) {
+          try {
+            _loadedMovies.add(item.localMovie.copyWith(category: '📅 Tendências'));
+          } catch (e) {
+            debugPrint('⚠️ Erro ao processar trending item: $e');
+          }
+        }
+        
+        debugPrint('📊 Tendências: ${_loadedMovies.length} itens carregados');
+      } catch (e) {
+        debugPrint('⚠️ Erro ao carregar tendências: $e');
+      }
+    } catch (e) {
+      _categoryError = 'Erro ao carregar tendências: $e';
+      debugPrint('❌ Erro ao carregar tendências: $e');
     } finally {
       _isLoadingCategory = false;
       notifyListeners();

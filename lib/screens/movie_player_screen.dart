@@ -10,6 +10,9 @@ import '../utils/tv_constants.dart';
 import '../utils/key_debouncer.dart';
 import '../services/storage_service.dart';
 
+/// Enum para rastreamento de elemento focado no D-PAD
+enum _FocusElement { playPause, volume, seek, nextEpisode }
+
 /// Player de filmes e séries
 class MoviePlayerScreen extends StatefulWidget {
   final Movie? movie;
@@ -47,6 +50,9 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
   bool _isLastEpisode = false;
   int _autoPlayCountdown = 10; // Segundos para auto-play
   Timer? _autoPlayTimer;
+  
+  // Sistema de navegação D-PAD
+  _FocusElement _currentFocus = _FocusElement.playPause;
 
   @override
   void initState() {
@@ -314,47 +320,41 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
       setState(() => _error = value.errorDescription ?? 'Erro de reprodução');
     }
     
-    // Verifica se deve mostrar botão de próximo episódio (série + últimos 60 segundos)
+    // Verifica se deve mostrar botão de próximo episódio (série + sempre visível)
     _checkNextEpisodeButton();
   }
   
   /// Verifica se deve mostrar o botão de próximo episódio
+  /// Agora sempre mostra para séries (não apenas nos últimos 60 segundos)
   void _checkNextEpisodeButton() {
     if (_currentMovie == null || !_isInitialized || _videoController == null) return;
     
     // Só para séries
     if (_currentMovie!.type != MovieType.series || _currentMovie!.episodes == null) {
+      setState(() => _showNextEpisodeButton = false);
       return;
     }
     
+    // Calcula o próximo episódio uma vez
+    if (!_showNextEpisodeButton) {
+      _calculateNextEpisode();
+      setState(() => _showNextEpisodeButton = _nextEpisode != null);
+    }
+    
+    // Inicia auto-play nos últimos 60 segundos
     final value = _videoController!.value;
     final position = value.position;
     final duration = value.duration;
     
     if (duration.inSeconds <= 0) return;
     
-    // Mostra nos últimos 60 segundos do episódio
     final remaining = duration - position;
-    final shouldShow = remaining.inSeconds <= 60 && remaining.inSeconds > 0;
+    final shouldAutoPlay = remaining.inSeconds <= 60 && remaining.inSeconds > 0;
     
-    if (shouldShow != _showNextEpisodeButton) {
-      // Calcula o próximo episódio quando for mostrar o botão
-      if (shouldShow) {
-        _calculateNextEpisode();
-        _startAutoPlayTimer();
-      } else {
-        _cancelAutoPlayTimer();
-      }
-      
-      setState(() {
-        _showNextEpisodeButton = shouldShow;
-        if (shouldShow) {
-          // Transfere foco para o botão de próximo episódio
-          _isNextEpisodeButtonFocused = true;
-        } else {
-          _isNextEpisodeButtonFocused = false;
-        }
-      });
+    if (shouldAutoPlay && _autoPlayTimer == null) {
+      _startAutoPlayTimer();
+    } else if (!shouldAutoPlay && _autoPlayTimer != null) {
+      _cancelAutoPlayTimer();
     }
   }
   
@@ -505,65 +505,98 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
         key == LogicalKeyboardKey.goBack ||
         key == LogicalKeyboardKey.browserBack) {
       if (_debouncer.shouldProcessBack()) {
-        // Se botão de próximo episódio estiver focado, volta para controles normais
-        if (_isNextEpisodeButtonFocused) {
-          setState(() => _isNextEpisodeButtonFocused = false);
-          _mainFocusNode.requestFocus();
-          return;
-        }
         _goBack();
       }
       return;
     }
 
-    // Se o botão de próximo episódio estiver visível, navegar com seta direita foca nele
-    if (_showNextEpisodeButton) {
-      if (key == LogicalKeyboardKey.arrowRight && !_isNextEpisodeButtonFocused) {
-        setState(() => _isNextEpisodeButtonFocused = true);
-        _startHideControlsTimer();
-        return;
+    // === NAVEGAÇÃO D-PAD ===
+    // Esquerda: Move foco para esquerda, ou diminui valor do elemento focado
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      HapticFeedback.selectionClick();
+      if (_currentFocus == _FocusElement.nextEpisode && _showNextEpisodeButton) {
+        // De próximo episódio volta para seek
+        setState(() => _currentFocus = _FocusElement.seek);
+      } else if (_currentFocus == _FocusElement.seek) {
+        // De seek volta para volume
+        setState(() => _currentFocus = _FocusElement.volume);
+      } else if (_currentFocus == _FocusElement.volume) {
+        // Na seção de volume, diminui volume
+        _adjustVolume(-0.1);
+      } else if (_currentFocus == _FocusElement.playPause) {
+        // De play/pause volta para volume
+        setState(() => _currentFocus = _FocusElement.volume);
       }
-      if (key == LogicalKeyboardKey.arrowLeft && _isNextEpisodeButtonFocused) {
-        setState(() => _isNextEpisodeButtonFocused = false);
-        _startHideControlsTimer();
-        return;
-      }
-      // Enter/Select no botão focado
-      if (_isNextEpisodeButtonFocused && 
-          (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter)) {
-        _goToNextEpisode();
-        return;
-      }
-    }
-
-    // Play/Pause
-    if (key == LogicalKeyboardKey.select ||
-        key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.gameButtonA ||
-        key == LogicalKeyboardKey.mediaPlayPause) {
-      _togglePlayPause();
       return;
     }
 
-    // Seek
-    if (key == LogicalKeyboardKey.arrowLeft ||
-        key == LogicalKeyboardKey.mediaRewind) {
+    // Direita: Move foco para direita, ou aumenta valor do elemento focado
+    if (key == LogicalKeyboardKey.arrowRight) {
+      HapticFeedback.selectionClick();
+      if (_currentFocus == _FocusElement.playPause) {
+        // De play/pause vai para volume
+        setState(() => _currentFocus = _FocusElement.volume);
+      } else if (_currentFocus == _FocusElement.volume) {
+        // Na seção de volume, aumenta volume
+        _adjustVolume(0.1);
+        return;
+      } else if (_currentFocus == _FocusElement.seek) {
+        // De seek vai para próximo episódio (se existir)
+        if (_showNextEpisodeButton) {
+          setState(() => _currentFocus = _FocusElement.nextEpisode);
+        }
+      }
+      return;
+    }
+
+    // Cima: Diminui o valor ou muda foco verticalmente (para play/pause)
+    if (key == LogicalKeyboardKey.arrowUp) {
+      HapticFeedback.selectionClick();
+      if (_currentFocus == _FocusElement.seek) {
+        // De seek vai para play/pause
+        setState(() => _currentFocus = _FocusElement.playPause);
+      } else if (_currentFocus == _FocusElement.nextEpisode) {
+        // De próximo episódio vai para play/pause
+        setState(() => _currentFocus = _FocusElement.playPause);
+      }
+      return;
+    }
+
+    // Baixo: Aumenta o valor ou muda foco verticalmente (para seek)
+    if (key == LogicalKeyboardKey.arrowDown) {
+      HapticFeedback.selectionClick();
+      if (_currentFocus == _FocusElement.playPause) {
+        // De play/pause vai para seek
+        setState(() => _currentFocus = _FocusElement.seek);
+      } else if (_currentFocus == _FocusElement.volume) {
+        // De volume vai para seek
+        setState(() => _currentFocus = _FocusElement.seek);
+      }
+      return;
+    }
+
+    // Select/Enter/A: Ativa a ação do elemento focado
+    if (key == LogicalKeyboardKey.select ||
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.gameButtonA) {
+      HapticFeedback.mediumImpact();
+      if (_currentFocus == _FocusElement.playPause) {
+        _togglePlayPause();
+      } else if (_currentFocus == _FocusElement.nextEpisode && _showNextEpisodeButton) {
+        _goToNextEpisode();
+      } else if (_currentFocus == _FocusElement.volume) {
+        _toggleMute();
+      }
+      return;
+    }
+
+    // Seek shortcuts (mediaRewind/mediaFastForward ainda funcionam)
+    if (key == LogicalKeyboardKey.mediaRewind) {
       _seekRelative(-10);
       return;
     }
-    if (key == LogicalKeyboardKey.arrowRight ||
-        key == LogicalKeyboardKey.mediaFastForward) {
+    if (key == LogicalKeyboardKey.mediaFastForward) {
       _seekRelative(10);
-      return;
-    }
-
-    // Volume
-    if (key == LogicalKeyboardKey.arrowUp) {
-      _adjustVolume(0.1);
-      return;
-    }
-    if (key == LogicalKeyboardKey.arrowDown) {
-      _adjustVolume(-0.1);
       return;
     }
 
@@ -753,10 +786,6 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
 
               // Controles
               if (_showControls) _buildControls(),
-              
-              // Botão inteligente de próximo episódio
-              if (_showNextEpisodeButton && _nextEpisode != null)
-                _buildNextEpisodeButton(),
             ],
           ),
         ),
@@ -765,12 +794,13 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
     );
   }
 
-  /// Constrói o botão flutuante de próximo episódio
+  /// Constrói o botão flutuante de próximo episódio (sempre visível para séries)
   Widget _buildNextEpisodeButton() {
     final isLastEp = _isLastEpisode;
     final nextSeasonNum = _nextSeason ?? 1;
     final nextEpNum = _nextEpisode?.episode ?? 1;
     final showCountdown = _autoPlayTimer != null && _autoPlayCountdown > 0 && !isLastEp;
+    final isFocused = _currentFocus == _FocusElement.nextEpisode;
     
     String buttonText;
     String subtitleText;
@@ -786,124 +816,128 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
       buttonIcon = Icons.skip_next_rounded;
     }
     
-    return Positioned(
-      right: 32,
-      bottom: 140,
-      child: AnimatedOpacity(
-        opacity: _showNextEpisodeButton ? 1.0 : 0.0,
-        duration: const Duration(milliseconds: 300),
-        child: AnimatedScale(
-          scale: _isNextEpisodeButtonFocused ? 1.05 : 1.0,
-          duration: const Duration(milliseconds: 150),
-          child: GestureDetector(
-            onTap: _goToNextEpisode,
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 340),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: _isNextEpisodeButtonFocused
-                      ? [const Color(0xFFE50914), const Color(0xFFB20710)]
-                      : [Colors.black.withOpacity(0.85), Colors.black.withOpacity(0.75)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _isNextEpisodeButtonFocused
-                      ? const Color(0xFFFFD700)
-                      : Colors.white.withOpacity(0.3),
-                  width: _isNextEpisodeButtonFocused ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: _isNextEpisodeButtonFocused
-                        ? const Color(0xFFFFD700).withOpacity(0.4)
-                        : Colors.black.withOpacity(0.5),
-                    blurRadius: _isNextEpisodeButtonFocused ? 16 : 10,
-                    spreadRadius: _isNextEpisodeButtonFocused ? 2 : 0,
-                  ),
-                ],
+    return AnimatedOpacity(
+      // Sempre visível para séries (opacidade reduzida quando não focado)
+      opacity: _showNextEpisodeButton ? (isFocused ? 1.0 : 0.6) : 0.0,
+      duration: const Duration(milliseconds: 300),
+      child: AnimatedScale(
+        scale: isFocused ? 1.08 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        child: GestureDetector(
+          onTap: _goToNextEpisode,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 360),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isFocused
+                    ? [const Color(0xFFE50914), const Color(0xFFB20710)]
+                    : [Colors.black.withOpacity(0.85), Colors.black.withOpacity(0.75)],
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Ícone com countdown circular
-                  Stack(
-                    alignment: Alignment.center,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isFocused
+                    ? const Color(0xFFFFD700)
+                    : Colors.white.withOpacity(0.2),
+                width: isFocused ? 2 : 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isFocused
+                      ? const Color(0xFFFFD700).withOpacity(0.5)
+                      : Colors.black.withOpacity(0.3),
+                  blurRadius: isFocused ? 18 : 8,
+                  spreadRadius: isFocused ? 2 : 0,
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Ícone com countdown circular
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    if (showCountdown)
+                      SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: CircularProgressIndicator(
+                          value: _autoPlayCountdown / 10,
+                          strokeWidth: 3,
+                          backgroundColor: Colors.white.withOpacity(0.15),
+                          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFE50914)),
+                        ),
+                      ),
+                    Container(
+                      padding: EdgeInsets.all(showCountdown ? 6 : 8),
+                      decoration: BoxDecoration(
+                        color: isFocused
+                            ? Colors.white.withOpacity(0.25)
+                            : SaimoTheme.primary.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        buttonIcon,
+                        color: Colors.white,
+                        size: showCountdown ? 20 : 24,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 16),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (showCountdown)
-                        SizedBox(
-                          width: 44,
-                          height: 44,
-                          child: CircularProgressIndicator(
-                            value: _autoPlayCountdown / 10,
-                            strokeWidth: 3,
-                            backgroundColor: Colors.white.withOpacity(0.2),
-                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFE50914)),
-                          ),
-                        ),
-                      Container(
-                        padding: EdgeInsets.all(showCountdown ? 6 : 8),
-                        decoration: BoxDecoration(
-                          color: _isNextEpisodeButtonFocused
-                              ? Colors.white.withOpacity(0.2)
-                              : SaimoTheme.primary.withOpacity(0.3),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          buttonIcon,
+                      Text(
+                        buttonText,
+                        style: TextStyle(
                           color: Colors.white,
-                          size: showCountdown ? 20 : 24,
+                          fontSize: TVConstants.fontM,
+                          fontWeight: isFocused ? FontWeight.bold : FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitleText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: TVConstants.fontS,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(width: 14),
-                  Flexible(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+                if (isFocused) ...[
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        const Icon(Icons.check_circle, color: Color(0xFFFFD700), size: 14),
+                        const SizedBox(width: 4),
                         Text(
-                          buttonText,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: TVConstants.fontM,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitleText,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          'OK',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.7),
-                            fontSize: TVConstants.fontS,
+                            color: Colors.white,
+                            fontSize: TVConstants.fontXS,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  if (_isNextEpisodeButtonFocused) ...[
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        showCountdown ? 'Pular' : 'OK',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: TVConstants.fontXS,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
-              ),
+              ],
             ),
           ),
         ),
@@ -930,15 +964,27 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
           ),
         ),
         child: SafeArea(
-          child: Column(
+          child: Stack(
             children: [
-              // Top bar
-              _buildTopBar(),
+              Column(
+                children: [
+                  // Top bar
+                  _buildTopBar(),
+                  
+                  const Spacer(),
+                  
+                  // Bottom bar
+                  _buildBottomBar(),
+                ],
+              ),
               
-              const Spacer(),
-              
-              // Bottom bar
-              _buildBottomBar(),
+              // Botão de próximo episódio (posicionado no canto inferior direito)
+              if (_showNextEpisodeButton && _nextEpisode != null)
+                Positioned(
+                  right: 32,
+                  bottom: 140,
+                  child: _buildNextEpisodeButton(),
+                ),
             ],
           ),
         ),
@@ -1029,139 +1075,90 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Progress bar
-          Row(
-            children: [
-              Text(
-                _formatDuration(position),
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.9),
-                  fontSize: TVConstants.fontM,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderThemeData(
-                    trackHeight: 4,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 8,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 16,
-                    ),
-                    activeTrackColor: SaimoTheme.primary,
-                    inactiveTrackColor: Colors.white.withOpacity(0.3),
-                    thumbColor: SaimoTheme.primary,
-                    overlayColor: SaimoTheme.primary.withOpacity(0.3),
-                  ),
-                  child: Slider(
-                    value: progress.clamp(0.0, 1.0),
-                    onChanged: (value) {
-                      final newPosition = Duration(
-                        seconds: (duration.inSeconds * value).toInt(),
-                      );
-                      _videoController!.seekTo(newPosition);
-                    },
+          // Progress bar (focável)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: _currentFocus == _FocusElement.seek 
+                  ? Colors.white.withOpacity(0.1)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  _formatDuration(position),
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: TVConstants.fontM,
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                _formatDuration(duration),
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.9),
-                  fontSize: TVConstants.fontM,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderThemeData(
+                      trackHeight: _currentFocus == _FocusElement.seek ? 6 : 4,
+                      thumbShape: RoundSliderThumbShape(
+                        enabledThumbRadius: _currentFocus == _FocusElement.seek ? 10 : 8,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 16,
+                      ),
+                      activeTrackColor: _currentFocus == _FocusElement.seek
+                          ? const Color(0xFFFFD700)
+                          : SaimoTheme.primary,
+                      inactiveTrackColor: Colors.white.withOpacity(0.3),
+                      thumbColor: _currentFocus == _FocusElement.seek
+                          ? const Color(0xFFFFD700)
+                          : SaimoTheme.primary,
+                      overlayColor: SaimoTheme.primary.withOpacity(0.3),
+                    ),
+                    child: Slider(
+                      value: progress.clamp(0.0, 1.0),
+                      onChanged: (value) {
+                        final newPosition = Duration(
+                          seconds: (duration.inSeconds * value).toInt(),
+                        );
+                        _videoController!.seekTo(newPosition);
+                      },
+                    ),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+                Text(
+                  _formatDuration(duration),
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: TVConstants.fontM,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           
-          // Controles
+          // Controles principais
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Volume
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: _toggleMute,
-                    icon: Icon(
-                      _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                      color: Colors.white,
-                      size: TVConstants.iconM,
-                    ),
-                  ),
-                  SizedBox(
-                    width: 100,
-                    child: SliderTheme(
-                      data: SliderThemeData(
-                        trackHeight: 3,
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 6,
-                        ),
-                        activeTrackColor: Colors.white,
-                        inactiveTrackColor: Colors.white.withOpacity(0.3),
-                        thumbColor: Colors.white,
-                      ),
-                      child: Slider(
-                        value: _isMuted ? 0 : _volume,
-                        onChanged: (value) {
-                          setState(() {
-                            _volume = value;
-                            _isMuted = value == 0;
-                          });
-                          _videoController?.setVolume(value);
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              
-              const SizedBox(width: 32),
-              
-              // Seek backward
-              IconButton(
-                onPressed: () => _seekRelative(-10),
-                icon: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    const Icon(
-                      Icons.replay_rounded,
-                      color: Colors.white,
-                      size: TVConstants.iconXL,
-                    ),
-                    Positioned(
-                      top: 10,
-                      child: Text(
-                        '10',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              
-              // Play/Pause
+              // Play/Pause (focável)
               GestureDetector(
                 onTap: _togglePlayPause,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: SaimoTheme.primary,
+                    color: _currentFocus == _FocusElement.playPause
+                        ? const Color(0xFFFFD700)
+                        : SaimoTheme.primary,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: SaimoTheme.primary.withOpacity(0.4),
-                        blurRadius: 20,
-                        spreadRadius: 2,
+                        color: (_currentFocus == _FocusElement.playPause
+                            ? const Color(0xFFFFD700)
+                            : SaimoTheme.primary).withOpacity(0.4),
+                        blurRadius: _currentFocus == _FocusElement.playPause ? 24 : 16,
+                        spreadRadius: _currentFocus == _FocusElement.playPause ? 2 : 0,
                       ),
                     ],
                   ),
@@ -1169,48 +1166,106 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
                     value.isPlaying
                         ? Icons.pause_rounded
                         : Icons.play_arrow_rounded,
-                    color: Colors.white,
+                    color: _currentFocus == _FocusElement.playPause
+                        ? Colors.black
+                        : Colors.white,
                     size: TVConstants.iconXL,
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
               
-              // Seek forward
-              IconButton(
-                onPressed: () => _seekRelative(10),
-                icon: Stack(
-                  alignment: Alignment.center,
+              const SizedBox(width: 24),
+              
+              // Volume (focável)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _currentFocus == _FocusElement.volume
+                      ? Colors.white.withOpacity(0.15)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  border: _currentFocus == _FocusElement.volume
+                      ? Border.all(color: const Color(0xFFFFD700), width: 1)
+                      : null,
+                ),
+                child: Row(
                   children: [
-                    const Icon(
-                      Icons.forward_10_rounded,
-                      color: Colors.white,
-                      size: TVConstants.iconXL,
+                    Icon(
+                      _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                      color: _currentFocus == _FocusElement.volume
+                          ? const Color(0xFFFFD700)
+                          : Colors.white,
+                      size: TVConstants.iconM,
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 100,
+                      child: SliderTheme(
+                        data: SliderThemeData(
+                          trackHeight: 3,
+                          thumbShape: RoundSliderThumbShape(
+                            enabledThumbRadius: _currentFocus == _FocusElement.volume ? 7 : 5,
+                          ),
+                          activeTrackColor: _currentFocus == _FocusElement.volume
+                              ? const Color(0xFFFFD700)
+                              : Colors.white,
+                          inactiveTrackColor: Colors.white.withOpacity(0.3),
+                          thumbColor: _currentFocus == _FocusElement.volume
+                              ? const Color(0xFFFFD700)
+                              : Colors.white,
+                        ),
+                        child: Slider(
+                          value: _isMuted ? 0 : _volume,
+                          onChanged: (value) {
+                            setState(() {
+                              _volume = value;
+                              _isMuted = value == 0;
+                            });
+                            _videoController?.setVolume(value);
+                          },
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
               
-              const SizedBox(width: 32),
+              const Spacer(),
               
-              // Dicas de teclas
+              // Dicas de navegação com D-PAD
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
+                  horizontal: 14,
+                  vertical: 8,
                 ),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Row(
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildKeyHint('←→', 'Seek'),
-                    const SizedBox(width: 16),
-                    _buildKeyHint('↑↓', 'Volume'),
-                    const SizedBox(width: 16),
-                    _buildKeyHint('OK', 'Play/Pause'),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildFocusHint('↑', 'Controles'),
+                        const SizedBox(width: 12),
+                        _buildFocusHint('↓', 'Seek'),
+                        const SizedBox(width: 12),
+                        _buildFocusHint('←→', 'Navega'),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildFocusHint('OK', 'Ativar'),
+                        if (_showNextEpisodeButton) ...[
+                          const SizedBox(width: 12),
+                          _buildFocusHint('→OK', 'Próximo'),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -1220,13 +1275,14 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
       ),
     );
   }
-
-  Widget _buildKeyHint(String key, String label) {
+  
+  /// Widget auxiliar para mostrar dicas de foco
+  Widget _buildFocusHint(String key, String action) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.2),
             borderRadius: BorderRadius.circular(4),
@@ -1235,17 +1291,17 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
             key,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: FontWeight.bold,
             ),
           ),
         ),
         const SizedBox(width: 4),
         Text(
-          label,
+          action,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.6),
-            fontSize: 10,
+            color: Colors.white.withOpacity(0.7),
+            fontSize: 11,
           ),
         ),
       ],

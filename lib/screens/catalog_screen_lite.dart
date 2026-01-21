@@ -1324,32 +1324,6 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       controller: _scrollController,
       padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
       children: [
-        // === TENDÊNCIAS DE HOJE ===
-        if (hasTrendingToday) ...[
-          _buildTrendingSection(
-            title: '🔥 Tendências de Hoje',
-            items: _trendingToday,
-            isLoading: _loadingTrending,
-            isFocused: _section == 2,
-            selectedIndex: _trendingTodayIndex,
-            scrollController: _trendingTodayScroll,
-          ),
-          const SizedBox(height: 24),
-        ],
-        
-        // === TENDÊNCIAS DA SEMANA ===
-        if (hasTrendingWeek) ...[
-          _buildTrendingSection(
-            title: '📅 Tendências da Semana',
-            items: _trendingWeek,
-            isLoading: _loadingTrending,
-            isFocused: _section == 3,
-            selectedIndex: _trendingWeekIndex,
-            scrollController: _trendingWeekScroll,
-          ),
-          const SizedBox(height: 24),
-        ],
-        
         // === CATEGORIAS ===
         if (categories.isNotEmpty) ...[
           const Padding(
@@ -1500,18 +1474,13 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     final movie = item.localMovie;
     
     if (movie.type == MovieType.series || item.isSeries) {
-      // Tenta encontrar a série agrupada
-      final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
-      final groupedSeries = provider.getGroupedSeries(movie.seriesName ?? movie.name);
-      
-      if (groupedSeries != null) {
-        showDialog(
-          context: context,
-          barrierColor: Colors.black87,
-          builder: (_) => SeriesModalOptimized(series: groupedSeries),
-        );
-        return;
-      }
+      // Mostra modal de série
+      showDialog(
+        context: context,
+        barrierColor: Colors.black87,
+        builder: (_) => MovieDetailModal(movie: movie),
+      );
+      return;
     }
     
     // Filme ou série não agrupada
@@ -2190,154 +2159,208 @@ class _ContentCardState extends State<_ContentCard> {
     
     return GestureDetector(
       onTap: widget.onTap,
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          border: widget.isFocused ? Border.all(color: const Color(0xFFFFD700), width: 3) : null,
+          border: widget.isFocused 
+              ? Border.all(color: const Color(0xFFFFD700), width: 3) 
+              : Border.all(color: Colors.transparent, width: 3),
           boxShadow: widget.isFocused
-              ? [BoxShadow(color: const Color(0xFFE50914).withAlpha(150), blurRadius: 12)]
-              : null,
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFFFFD700).withOpacity(0.6),
+                    blurRadius: 24,
+                    spreadRadius: 4,
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFFE50914).withOpacity(0.4),
+                    blurRadius: 16,
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 8,
+                  ),
+                ],
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Poster (TMDB ou original)
-              imageUrl != null && imageUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 300,
-                      placeholder: (_, __) => _placeholder(),
-                      errorWidget: (_, __, ___) => _placeholder(),
-                    )
-                  : _placeholder(),
-              
-              // Gradiente
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Colors.black.withAlpha(220)],
-                      stops: const [0.4, 1.0],
+        child: Transform.scale(
+          scale: widget.isFocused ? 1.06 : 1.0,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Poster (TMDB ou original)
+                imageUrl != null && imageUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover,
+                        memCacheWidth: 300,
+                        placeholder: (_, __) => _placeholder(),
+                        errorWidget: (_, __, ___) => _placeholder(),
+                      )
+                    : _placeholder(),
+                
+                // Overlay escuro quando focado
+                if (widget.isFocused)
+                  Positioned.fill(
+                    child: Container(
+                      color: Colors.black.withOpacity(0.2),
+                    ),
+                  ),
+                
+                // Gradiente
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black.withAlpha(220)],
+                        stops: const [0.4, 1.0],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              
-              // Badge tipo (SÉRIE/FILME) - canto superior esquerdo
-              Positioned(
-                top: 6,
-                left: 6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: widget.item.type == DisplayItemType.series
-                        ? const Color(0xFF0077FF)
-                        : const Color(0xFFE50914),
-                    borderRadius: BorderRadius.circular(4),
+                
+                // Indicador de foco (canto inferior direito quando focado)
+                if (widget.isFocused)
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFD700),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.5),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        color: Colors.black,
+                        size: 16,
+                      ),
+                    ),
                   ),
-                  child: Text(
-                    widget.item.type == DisplayItemType.series ? 'SÉRIE' : 'FILME',
-                    style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                
+                // Badge tipo (SÉRIE/FILME) - canto superior esquerdo
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: widget.item.type == DisplayItemType.series
+                          ? const Color(0xFF0077FF)
+                          : const Color(0xFFE50914),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      widget.item.type == DisplayItemType.series ? 'SÉRIE' : 'FILME',
+                      style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
-              ),
-              
-              // Rating e Classificação - canto superior direito
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    // Rating (nota do TMDB)
-                    if (_tmdbRating != null && _tmdbRating! > 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _getRatingColor(_tmdbRating!),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.star_rounded, color: Colors.white, size: 10),
-                            const SizedBox(width: 2),
-                            Text(
-                              _tmdbRating!.toStringAsFixed(1),
-                              style: const TextStyle(
-                                color: Colors.white, 
-                                fontSize: 9, 
-                                fontWeight: FontWeight.bold,
+                
+                // Rating e Classificação - canto superior direito
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // Rating (nota do TMDB)
+                      if (_tmdbRating != null && _tmdbRating! > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _getRatingColor(_tmdbRating!),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.star_rounded, color: Colors.white, size: 10),
+                              const SizedBox(width: 2),
+                              Text(
+                                _tmdbRating!.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  color: Colors.white, 
+                                  fontSize: 9, 
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
+                            ],
+                          ),
+                        ),
+                      
+                      // Classificação indicativa
+                      if (_tmdbCertification != null && _tmdbCertification!.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(top: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _getCertificationColor(_tmdbCertification!),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.white24, width: 0.5),
+                          ),
+                          child: Text(
+                            _tmdbCertification!,
+                            style: const TextStyle(
+                              color: Colors.white, 
+                              fontSize: 8, 
+                              fontWeight: FontWeight.bold,
                             ),
-                          ],
-                        ),
-                      ),
-                    
-                    // Classificação indicativa
-                    if (_tmdbCertification != null && _tmdbCertification!.isNotEmpty)
-                      Container(
-                        margin: const EdgeInsets.only(top: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _getCertificationColor(_tmdbCertification!),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.white24, width: 0.5),
-                        ),
-                        child: Text(
-                          _tmdbCertification!,
-                          style: const TextStyle(
-                            color: Colors.white, 
-                            fontSize: 8, 
-                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              
-              // Nome
-              Positioned(
-                left: 6,
-                right: 6,
-                bottom: 6,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      widget.item.displayName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+                
+                // Nome
+                Positioned(
+                  left: 6,
+                  right: 6,
+                  bottom: 6,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.item.displayName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    // Info adicional de série (temporadas/episódios)
-                    if (widget.item.type == DisplayItemType.series && widget.item.series != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          '${widget.item.series!.seasonCount}T • ${widget.item.series!.episodeCount}E',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.7),
-                            fontSize: 9,
+                      // Info adicional de série (temporadas/episódios)
+                      if (widget.item.type == DisplayItemType.series && widget.item.series != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '${widget.item.series!.seasonCount}T • ${widget.item.series!.episodeCount}E',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.7),
+                              fontSize: 9,
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
