@@ -9,7 +9,6 @@ import '../providers/movie_favorites_provider.dart';
 import '../widgets/movie_detail_modal.dart';
 import '../widgets/series_modal_optimized.dart';
 import '../widgets/advanced_filters_modal.dart';
-import '../services/tmdb_image_service.dart';
 import '../services/trending_service.dart';
 import '../services/json_lazy_service.dart';
 import '../utils/tv_constants.dart';
@@ -1422,6 +1421,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
                   : ListView.builder(
                       controller: scrollController,
                       scrollDirection: Axis.horizontal,
+                      // OTIMIZADO: Cache para scroll mais suave
+                      cacheExtent: 500,
+                      addAutomaticKeepAlives: false,
                       itemCount: items.length,
                       itemBuilder: (context, index) {
                         final item = items[index];
@@ -1503,6 +1505,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     return GridView.builder(
       controller: _scrollController,
       padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
+      // OTIMIZADO: Reduz consumo de memória
+      addAutomaticKeepAlives: false,
+      addRepaintBoundaries: true,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: _columns,
         childAspectRatio: _cardWidth / _cardHeight,
@@ -1832,11 +1837,14 @@ class _TrendingCard extends StatelessWidget {
                     fit: StackFit.expand,
                     children: [
                       // Imagem do poster
+                      // OTIMIZADO: CachedNetworkImage ao invés de Image.network
                       item.posterUrl != null
-                          ? Image.network(
-                              item.posterUrl!,
+                          ? CachedNetworkImage(
+                              imageUrl: item.posterUrl!,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => _buildPlaceholder(),
+                              memCacheWidth: 300,
+                              placeholder: (_, __) => _buildPlaceholder(),
+                              errorWidget: (_, __, ___) => _buildPlaceholder(),
                             )
                           : _buildPlaceholder(),
                       
@@ -2059,7 +2067,8 @@ class _CategoryCard extends StatelessWidget {
   }
 }
 
-class _ContentCard extends StatefulWidget {
+/// OTIMIZADO: Convertido para StatelessWidget, usa dados TMDB pré-carregados
+class _ContentCard extends StatelessWidget {
   final CatalogDisplayItem item;
   final bool isFocused;
   final VoidCallback onTap;
@@ -2071,295 +2080,179 @@ class _ContentCard extends StatefulWidget {
   });
 
   @override
-  State<_ContentCard> createState() => _ContentCardState();
-}
-
-class _ContentCardState extends State<_ContentCard> {
-  // Cache de dados TMDB
-  String? _tmdbPoster;
-  double? _tmdbRating;
-  String? _tmdbCertification;
-  bool _loadedTmdb = false;
-  bool _isLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Carrega TMDB de forma lazy
-    _loadTMDBData();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ContentCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Se o item mudou, recarrega TMDB
-    if (oldWidget.item.displayName != widget.item.displayName) {
-      _loadedTmdb = false;
-      _tmdbPoster = null;
-      _tmdbRating = null;
-      _tmdbCertification = null;
-      _loadTMDBData();
-    }
-  }
-
-  Future<void> _loadTMDBData() async {
-    if (_loadedTmdb || _isLoading) return;
-    _isLoading = true;
-    
-    try {
-      final type = widget.item.type == DisplayItemType.series ? 'tv' : 'movie';
-      final name = widget.item.displayName;
-      final category = widget.item.movie?.category ?? widget.item.series?.category;
-      
-      // Busca poster
-      final poster = await TMDBImageService.searchImage(
-        name, 
-        type: type, 
-        category: category,
-      );
-      
-      if (mounted && poster != null && poster.isNotEmpty) {
-        setState(() => _tmdbPoster = poster);
-      }
-      
-      // Busca rating
-      final rating = await TMDBImageService.searchRating(
-        name, 
-        type: type, 
-        category: category,
-      );
-      
-      if (mounted && rating != null && rating > 0) {
-        setState(() => _tmdbRating = rating);
-      }
-      
-      // Busca classificação indicativa
-      final certification = await TMDBImageService.searchCertification(
-        name, 
-        type: type, 
-        category: category,
-      );
-      
-      if (mounted && certification != null && certification.isNotEmpty) {
-        setState(() => _tmdbCertification = certification);
-      }
-      
-      _loadedTmdb = true;
-    } catch (_) {
-      // Ignora erros - usa imagem original
-    } finally {
-      _isLoading = false;
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    // Usa poster do TMDB se disponível, senão usa o logo original
-    final imageUrl = _tmdbPoster ?? widget.item.logo;
+    // Usa dados TMDB já pré-carregados do JSON (sem chamadas async)
+    final imageUrl = item.movie?.posterUrl ?? item.series?.logoUrl ?? item.logo;
+    final rating = item.movie?.tmdb?.rating ?? item.series?.tmdb?.rating;
+    final certification = item.movie?.tmdb?.certification ?? item.series?.tmdb?.certification;
     
     return GestureDetector(
-      onTap: widget.onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: widget.isFocused 
-              ? Border.all(color: const Color(0xFFFFD700), width: 3) 
-              : Border.all(color: Colors.transparent, width: 3),
-          boxShadow: widget.isFocused
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFFFFD700).withOpacity(0.6),
-                    blurRadius: 24,
-                    spreadRadius: 4,
-                  ),
-                  BoxShadow(
-                    color: const Color(0xFFE50914).withOpacity(0.4),
-                    blurRadius: 16,
-                  ),
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 8,
-                  ),
-                ],
-        ),
-        child: Transform.scale(
-          scale: widget.isFocused ? 1.06 : 1.0,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Poster (TMDB ou original)
-                imageUrl != null && imageUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: imageUrl,
-                        fit: BoxFit.cover,
-                        memCacheWidth: 300,
-                        placeholder: (_, __) => _placeholder(),
-                        errorWidget: (_, __, ___) => _placeholder(),
-                      )
-                    : _placeholder(),
-                
-                // Overlay escuro quando focado
-                if (widget.isFocused)
-                  Positioned.fill(
-                    child: Container(
-                      color: Colors.black.withOpacity(0.2),
+      onTap: onTap,
+      child: RepaintBoundary(
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: isFocused 
+                ? Border.all(color: const Color(0xFFFFD700), width: 3) 
+                : null,
+            boxShadow: isFocused
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFFFFD700).withOpacity(0.6),
+                      blurRadius: 24,
+                      spreadRadius: 4,
                     ),
-                  ),
-                
-                // Gradiente
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black.withAlpha(220)],
-                        stops: const [0.4, 1.0],
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 8,
+                    ),
+                  ],
+          ),
+          child: Transform.scale(
+            scale: isFocused ? 1.06 : 1.0,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Poster (pré-carregado)
+                  imageUrl != null && imageUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: imageUrl,
+                          fit: BoxFit.cover,
+                          memCacheWidth: 300,
+                          placeholder: (_, __) => _placeholder(),
+                          errorWidget: (_, __, ___) => _placeholder(),
+                        )
+                      : _placeholder(),
+                  
+                  // Gradiente
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, Colors.black.withAlpha(220)],
+                          stops: const [0.4, 1.0],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                
-                // Indicador de foco (canto inferior direito quando focado)
-                if (widget.isFocused)
+                  
+                  // Indicador de foco
+                  if (isFocused)
+                    Positioned(
+                      bottom: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFFD700),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.check, color: Colors.black, size: 16),
+                      ),
+                    ),
+                  
+                  // Badge tipo (SÉRIE/FILME)
                   Positioned(
-                    bottom: 8,
-                    right: 8,
+                    top: 6,
+                    left: 6,
                     child: Container(
-                      padding: const EdgeInsets.all(6),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFD700),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.5),
-                            blurRadius: 8,
-                          ),
+                        color: item.type == DisplayItemType.series
+                            ? const Color(0xFF0077FF)
+                            : const Color(0xFFE50914),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        item.type == DisplayItemType.series ? 'SÉRIE' : 'FILME',
+                        style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  
+                  // Rating e Classificação
+                  if (rating != null && rating > 0 || certification != null)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (rating != null && rating > 0)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _getRatingColor(rating),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.star_rounded, color: Colors.white, size: 10),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    rating.toStringAsFixed(1),
+                                    style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if (certification != null && certification.isNotEmpty)
+                            Container(
+                              margin: const EdgeInsets.only(top: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _getCertificationColor(certification),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                certification,
+                                style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                              ),
+                            ),
                         ],
                       ),
-                      child: const Icon(
-                        Icons.check,
-                        color: Colors.black,
-                        size: 16,
-                      ),
                     ),
-                  ),
-                
-                // Badge tipo (SÉRIE/FILME) - canto superior esquerdo
-                Positioned(
-                  top: 6,
-                  left: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: widget.item.type == DisplayItemType.series
-                          ? const Color(0xFF0077FF)
-                          : const Color(0xFFE50914),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      widget.item.type == DisplayItemType.series ? 'SÉRIE' : 'FILME',
-                      style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-                
-                // Rating e Classificação - canto superior direito
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      // Rating (nota do TMDB)
-                      if (_tmdbRating != null && _tmdbRating! > 0)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _getRatingColor(_tmdbRating!),
-                            borderRadius: BorderRadius.circular(4),
+                  
+                  // Nome
+                  Positioned(
+                    left: 6,
+                    right: 6,
+                    bottom: 6,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          item.displayName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            shadows: [Shadow(color: Colors.black, blurRadius: 4)],
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.star_rounded, color: Colors.white, size: 10),
-                              const SizedBox(width: 2),
-                              Text(
-                                _tmdbRating!.toStringAsFixed(1),
-                                style: const TextStyle(
-                                  color: Colors.white, 
-                                  fontSize: 9, 
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      
-                      // Classificação indicativa
-                      if (_tmdbCertification != null && _tmdbCertification!.isNotEmpty)
-                        Container(
-                          margin: const EdgeInsets.only(top: 4),
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _getCertificationColor(_tmdbCertification!),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.white24, width: 0.5),
-                          ),
-                          child: Text(
-                            _tmdbCertification!,
-                            style: const TextStyle(
-                              color: Colors.white, 
-                              fontSize: 8, 
-                              fontWeight: FontWeight.bold,
+                        if (item.type == DisplayItemType.series && item.series != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              '${item.series!.seasonCount}T • ${item.series!.episodeCount}E',
+                              style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 9),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                
-                // Nome
-                Positioned(
-                  left: 6,
-                  right: 6,
-                  bottom: 6,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        widget.item.displayName,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          shadows: [Shadow(color: Colors.black, blurRadius: 4)],
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      // Info adicional de série (temporadas/episódios)
-                      if (widget.item.type == DisplayItemType.series && widget.item.series != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            '${widget.item.series!.seasonCount}T • ${widget.item.series!.episodeCount}E',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
-                              fontSize: 9,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -2371,53 +2264,30 @@ class _ContentCardState extends State<_ContentCard> {
     return Container(
       color: const Color(0xFF1A1A1A),
       child: Center(
-        child: _isLoading
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Color(0xFFE50914),
-                ),
-              )
-            : Icon(
-                widget.item.type == DisplayItemType.series ? Icons.tv : Icons.movie,
-                color: Colors.white24,
-                size: 32,
-              ),
+        child: Icon(
+          item.type == DisplayItemType.series ? Icons.tv : Icons.movie,
+          color: Colors.white24,
+          size: 32,
+        ),
       ),
     );
   }
 
-  /// Retorna cor baseada na nota
   Color _getRatingColor(double rating) {
-    if (rating >= 7.5) return const Color(0xFF22C55E); // Verde
-    if (rating >= 6.0) return const Color(0xFFF59E0B); // Amarelo
-    if (rating >= 4.0) return const Color(0xFFF97316); // Laranja
-    return const Color(0xFFEF4444); // Vermelho
+    if (rating >= 7.5) return const Color(0xFF22C55E);
+    if (rating >= 6.0) return const Color(0xFFF59E0B);
+    if (rating >= 4.0) return const Color(0xFFF97316);
+    return const Color(0xFFEF4444);
   }
 
-  /// Retorna cor baseada na classificação
   Color _getCertificationColor(String cert) {
     final c = cert.toUpperCase();
-    if (c == 'L' || c == 'G' || c == 'TV-G' || c == 'TV-Y') {
-      return const Color(0xFF22C55E); // Verde - Livre
-    }
-    if (c == '10' || c == 'PG' || c == 'TV-PG' || c == 'TV-Y7') {
-      return const Color(0xFF3B82F6); // Azul - 10 anos
-    }
-    if (c == '12' || c == 'PG-13' || c == 'TV-14') {
-      return const Color(0xFFF59E0B); // Amarelo - 12 anos
-    }
-    if (c == '14') {
-      return const Color(0xFFF97316); // Laranja - 14 anos
-    }
-    if (c == '16' || c == 'R' || c == 'TV-MA') {
-      return const Color(0xFFEF4444); // Vermelho - 16 anos
-    }
-    if (c == '18' || c == 'NC-17' || c == 'NR') {
-      return const Color(0xFF000000); // Preto - 18 anos
-    }
-    return const Color(0xFF6B7280); // Cinza - Desconhecido
+    if (c == 'L' || c == 'G' || c == 'TV-G' || c == 'TV-Y') return const Color(0xFF22C55E);
+    if (c == '10' || c == 'PG' || c == 'TV-PG' || c == 'TV-Y7') return const Color(0xFF3B82F6);
+    if (c == '12' || c == 'PG-13' || c == 'TV-14') return const Color(0xFFF59E0B);
+    if (c == '14') return const Color(0xFFF97316);
+    if (c == '16' || c == 'R' || c == 'TV-MA') return const Color(0xFFEF4444);
+    if (c == '18' || c == 'NC-17' || c == 'NR') return const Color(0xFF000000);
+    return const Color(0xFF6B7280);
   }
 }

@@ -796,42 +796,48 @@ class LazyMoviesProvider with ChangeNotifier {
   }
 
   /// Carrega a categoria especial "🌟 Primeiras" com os primeiros filmes/séries de cada categoria
+  /// OTIMIZADO: Limita a 10 categorias e carrega em paralelo
   Future<void> _loadPrimeirasCategory() async {
     _isLoadingCategory = true;
     _categoryError = null;
     notifyListeners();
 
     try {
-      // Carrega um item de cada categoria
-      for (final cat in _categories) {
-        if (cat.isAdult && !_showAdultContent) continue; // Pula categorias adultas
-        
-        try {
-          final data = await _service.loadCategory(cat.id);
-          if (data != null) {
-            // Pega o primeiro filme
-            if (data.movies.isNotEmpty && !data.movies[0].isAdult) {
-              _loadedMovies.add(data.movies[0].copyWith(category: cat.name));
+      // Limita às primeiras 10 categorias não-adultas para performance
+      final limitedCategories = _categories
+          .where((c) => !c.isAdult || _showAdultContent)
+          .take(10)
+          .toList();
+      
+      // Listas temporárias para coleta paralela
+      final tempMovies = <Movie>[];
+      final tempSeries = <Movie>[];
+      
+      // Carrega em PARALELO usando Future.wait
+      await Future.wait(
+        limitedCategories.map((cat) async {
+          try {
+            final data = await _service.loadCategory(cat.id);
+            if (data != null) {
+              // Pega o primeiro filme
+              if (data.movies.isNotEmpty && !data.movies[0].isAdult) {
+                tempMovies.add(data.movies[0].copyWith(category: cat.name));
+              }
+              // Pega a primeira série (episódio)
+              if (data.series.isNotEmpty && !data.series[0].isAdult) {
+                tempSeries.add(data.series[0].copyWith(category: cat.name));
+              }
             }
-            // Pega a primeira série (episódio)
-            if (data.series.isNotEmpty && !data.series[0].isAdult) {
-              _loadedSeries.add(data.series[0].copyWith(category: cat.name));
-            }
+          } catch (e) {
+            debugPrint('⚠️ Erro ao carregar primeira de ${cat.name}: $e');
           }
-        } catch (e) {
-          debugPrint('⚠️ Erro ao carregar primeira de ${cat.name}: $e');
-        }
-      }
+        }),
+      );
       
-      // Limita a 20 itens total
-      if (_loadedMovies.length + _loadedSeries.length > 20) {
-        final total = _loadedMovies.length + _loadedSeries.length;
-        final ratio = 20 / total;
-        _loadedMovies = (_loadedMovies.take((_loadedMovies.length * ratio).toInt()).toList());
-        _loadedSeries = (_loadedSeries.take((_loadedSeries.length * ratio).toInt()).toList());
-      }
+      _loadedMovies = tempMovies;
+      _loadedSeries = tempSeries;
       
-      debugPrint('⭐ Primeiras: ${_loadedMovies.length} filmes, ${_loadedSeries.length} séries');
+      debugPrint('⭐ Primeiras: ${_loadedMovies.length} filmes, ${_loadedSeries.length} séries (paralelo)');
     } catch (e) {
       _categoryError = 'Erro ao carregar: $e';
     } finally {
@@ -841,38 +847,22 @@ class LazyMoviesProvider with ChangeNotifier {
   }
 
   /// Carrega a categoria de Tendências combinando hoje e semana
+  /// OTIMIZADO: Removido try/catch redundante, usa addAll
   Future<void> _loadTrendingCategory() async {
     _isLoadingCategory = true;
     _categoryError = null;
     notifyListeners();
 
     try {
-      // Carrega tendências de hoje
-      try {
-        final results = await TrendingService.getAllTrending(_service);
-        
-        // Adiciona tendências de hoje
-        for (final item in results.today) {
-          try {
-            _loadedMovies.add(item.localMovie.copyWith(category: '🔥 Tendências'));
-          } catch (e) {
-            debugPrint('⚠️ Erro ao processar trending item: $e');
-          }
-        }
-        
-        // Adiciona tendências da semana
-        for (final item in results.week) {
-          try {
-            _loadedMovies.add(item.localMovie.copyWith(category: '📅 Tendências'));
-          } catch (e) {
-            debugPrint('⚠️ Erro ao processar trending item: $e');
-          }
-        }
-        
-        debugPrint('📊 Tendências: ${_loadedMovies.length} itens carregados');
-      } catch (e) {
-        debugPrint('⚠️ Erro ao carregar tendências: $e');
-      }
+      final results = await TrendingService.getAllTrending(_service);
+      
+      // Adiciona tendências de hoje e semana de forma eficiente
+      _loadedMovies = [
+        ...results.today.map((item) => item.localMovie.copyWith(category: '🔥 Tendências Hoje')),
+        ...results.week.map((item) => item.localMovie.copyWith(category: '📅 Tendências Semana')),
+      ];
+      
+      debugPrint('📊 Tendências: ${_loadedMovies.length} itens carregados');
     } catch (e) {
       _categoryError = 'Erro ao carregar tendências: $e';
       debugPrint('❌ Erro ao carregar tendências: $e');
