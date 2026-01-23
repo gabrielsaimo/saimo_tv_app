@@ -630,37 +630,41 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
     required String label,
     required bool isSelected,
     required bool isFocused,
+    VoidCallback? onTap,
   }) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 100),
-      padding: EdgeInsets.symmetric(
-        horizontal: isFocused ? 10 : 8,
-        vertical: isFocused ? 5 : 4,
-      ),
-      decoration: BoxDecoration(
-        gradient: isSelected
-            ? const LinearGradient(colors: [Color(0xFFE50914), Color(0xFFB20710)])
-            : null,
-        color: isSelected ? null : Colors.white.withOpacity(isFocused ? 0.15 : 0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isFocused
-              ? const Color(0xFFFFD700)
-              : isSelected
-                  ? Colors.transparent
-                  : Colors.white.withOpacity(0.2),
-          width: isFocused ? 2 : 1,
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 100),
+        padding: EdgeInsets.symmetric(
+          horizontal: isFocused ? 10 : 8,
+          vertical: isFocused ? 5 : 4,
         ),
-        boxShadow: isFocused
-            ? [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.3), blurRadius: 6)]
-            : null,
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: isSelected || isFocused ? FontWeight.bold : FontWeight.normal,
+        decoration: BoxDecoration(
+          gradient: isSelected
+              ? const LinearGradient(colors: [Color(0xFFE50914), Color(0xFFB20710)])
+              : null,
+          color: isSelected ? null : Colors.white.withOpacity(isFocused ? 0.15 : 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isFocused
+                ? const Color(0xFFFFD700)
+                : isSelected
+                    ? Colors.transparent
+                    : Colors.white.withOpacity(0.2),
+            width: isFocused ? 2 : 1,
+          ),
+          boxShadow: isFocused
+              ? [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.3), blurRadius: 6)]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: isSelected || isFocused ? FontWeight.bold : FontWeight.normal,
+          ),
         ),
       ),
     );
@@ -716,6 +720,19 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
                 label: genre,
                 isSelected: isSelected,
                 isFocused: isItemFocused,
+                onTap: () {
+                  setState(() {
+                    _currentSection = 0;
+                    _selectedItemIndex = index;
+                    final newGenres = Set<String>.from(_filters.genres);
+                    if (newGenres.contains(genre)) {
+                      newGenres.remove(genre);
+                    } else {
+                      newGenres.add(genre);
+                    }
+                    _filters = _filters.copyWith(genres: newGenres);
+                  });
+                },
               );
             }).toList(),
           ),
@@ -745,6 +762,13 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
               label: label,
               isSelected: isSelected,
               isFocused: isItemFocused,
+              onTap: () {
+                setState(() {
+                  _currentSection = 1;
+                  _selectedItemIndex = index;
+                  _filters = _filters.copyWith(yearFrom: year, clearYearFrom: year == null);
+                });
+              },
             );
           }).toList(),
         ),
@@ -774,6 +798,13 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
               label: label,
               isSelected: isSelected,
               isFocused: isItemFocused,
+              onTap: () {
+                setState(() {
+                  _currentSection = 2;
+                  _selectedItemIndex = index;
+                  _filters = _filters.copyWith(minRating: rating, clearMinRating: rating == null);
+                });
+              },
             );
           }).toList(),
         ),
@@ -804,6 +835,16 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
               label: cert,
               isSelected: isSelected,
               isFocused: isItemFocused,
+              onTap: () {
+                setState(() {
+                  _currentSection = 3;
+                  _selectedItemIndex = index;
+                  _filters = _filters.copyWith(
+                    certification: cert == 'Todas' ? null : cert,
+                    clearCertification: cert == 'Todas',
+                  );
+                });
+              },
             );
           }).toList(),
         ),
@@ -837,6 +878,13 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
               label: label,
               isSelected: isSelected,
               isFocused: isItemFocused,
+              onTap: () {
+                setState(() {
+                  _currentSection = 4;
+                  _selectedItemIndex = index;
+                  _filters = _filters.copyWith(maxRuntime: runtime, clearMaxRuntime: runtime == null);
+                });
+              },
             );
           }).toList(),
         ),
@@ -874,6 +922,17 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
               label: '${sortLabels[sort]}$arrow',
               isSelected: isSelected,
               isFocused: isItemFocused,
+              onTap: () {
+                setState(() {
+                  _currentSection = 5;
+                  _selectedItemIndex = index;
+                  if (_filters.sortBy == sort) {
+                    _filters = _filters.copyWith(sortDescending: !_filters.sortDescending);
+                  } else {
+                    _filters = _filters.copyWith(sortBy: sort);
+                  }
+                });
+              },
             );
           }).toList(),
         ),
@@ -1128,6 +1187,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
           icon: Icons.clear_all_rounded,
           isFocused: isFocused && _selectedItemIndex == 0,
           isDestructive: true,
+          onTap: () => setState(() => _filters = AdvancedFilters.empty),
         ),
         const SizedBox(width: 16),
         _buildActionButton(
@@ -1135,6 +1195,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
           icon: Icons.close_rounded,
           isFocused: isFocused && _selectedItemIndex == 1,
           isSecondary: true,
+          onTap: () => Navigator.of(context).pop(),
         ),
         const SizedBox(width: 16),
         _buildActionButton(
@@ -1142,6 +1203,10 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
           icon: Icons.check_rounded,
           isFocused: isFocused && _selectedItemIndex == 2,
           isPrimary: true,
+          onTap: () {
+            widget.onApply(_filters);
+            Navigator.of(context).pop();
+          },
         ),
       ],
     );
@@ -1154,6 +1219,7 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
     bool isPrimary = false,
     bool isSecondary = false,
     bool isDestructive = false,
+    VoidCallback? onTap,
   }) {
     Color bgColor;
     Color textColor = Colors.white;
@@ -1168,37 +1234,40 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
       textColor = Colors.white70;
     }
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      padding: EdgeInsets.symmetric(
-        horizontal: isFocused ? 24 : 20,
-        vertical: isFocused ? 14 : 12,
-      ),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isFocused ? const Color(0xFFFFD700) : Colors.transparent,
-          width: 2,
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: EdgeInsets.symmetric(
+          horizontal: isFocused ? 24 : 20,
+          vertical: isFocused ? 14 : 12,
         ),
-        boxShadow: isFocused
-            ? [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.4), blurRadius: 12)]
-            : null,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: isPrimary ? Colors.white : textColor, size: 18),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: TextStyle(
-              color: isPrimary ? Colors.white : textColor,
-              fontSize: 14,
-              fontWeight: isFocused || isPrimary ? FontWeight.bold : FontWeight.w500,
-            ),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isFocused ? const Color(0xFFFFD700) : Colors.transparent,
+            width: 2,
           ),
-        ],
+          boxShadow: isFocused
+              ? [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.4), blurRadius: 12)]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: isPrimary ? Colors.white : textColor, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: isPrimary ? Colors.white : textColor,
+                fontSize: 14,
+                fontWeight: isFocused || isPrimary ? FontWeight.bold : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

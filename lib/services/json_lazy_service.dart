@@ -514,24 +514,85 @@ class JsonLazyService {
 
   /// Busca filme/série por TMDB ID (em todas as categorias carregadas)
   Future<Movie?> findByTmdbId(int tmdbId, {bool includeAdult = false}) async {
+    final results = await findBatchByTmdbIds([tmdbId], includeAdult: includeAdult);
+    return results[tmdbId];
+  }
+
+  /// Busca múltiplos filmes/séries por lista de TMDB IDs (Busca em Lote Otimizada)
+  /// Retorna um Map onde a chave é o ID do TMDB e o valor é o Movie encontrado.
+  Future<Map<int, Movie>> findBatchByTmdbIds(List<int> tmdbIds, {bool includeAdult = false}) async {
     await loadCategoryIndex();
     
-    for (final cat in _categoryIndex!) {
+    final results = <int, Movie>{};
+    final idsToFind = Set<int>.from(tmdbIds);
+    
+    // Se não há IDs para buscar, retorna vazio
+    if (idsToFind.isEmpty) return results;
+
+    debugPrint('🔍 findBatchByTmdbIds: Buscando ${idsToFind.length} itens...');
+    
+    // Otimização: Primeiro verifica nas categorias JÁ carregadas em memória (rápido)
+    for (final cat in _categoryCache.keys) {
+       final data = _categoryCache[cat];
+       if (data == null) continue;
+       
+       // Verifica filmes
+       for (final movie in data.movies) {
+         if (movie.tmdb?.id != null && idsToFind.contains(movie.tmdb!.id)) {
+           results[movie.tmdb!.id!] = movie;
+           idsToFind.remove(movie.tmdb!.id); // Já achou, não precisa buscar mais
+         }
+       }
+       // Verifica séries
+       for (final series in data.series) {
+         if (series.tmdb?.id != null && idsToFind.contains(series.tmdb!.id)) {
+           results[series.tmdb!.id!] = series;
+           idsToFind.remove(series.tmdb!.id);
+         }
+       }
+       
+       // Se achou tudo, retorna
+       if (idsToFind.isEmpty) {
+         debugPrint('✅ findBatchByTmdbIds: Todos encontrados no cache de memória');
+         return results;
+       }
+    }
+
+    // Se ainda faltam itens, busca nas categorias não carregadas (lento - I/O)
+    // Ordena priorizando "Lançamentos" e "Primeiras" onde é mais provável ter hits
+    final orderedCats = _categoryIndex!.toList()
+      ..sort((a, b) {
+         final aPriority = a.name.contains('Lançamento') ? 0 : 1;
+         final bPriority = b.name.contains('Lançamento') ? 0 : 1;
+         return aPriority.compareTo(bPriority);
+      });
+
+    for (final cat in orderedCats) {
       if (!includeAdult && cat.isAdult) continue;
+      
+      // Pula se já verificamos (estava em memória)
+      if (_categoryCache.containsKey(cat.id)) continue; 
       
       final data = await loadCategory(cat.id);
       if (data == null) continue;
       
+      // Verifica filmes e séries
       for (final movie in [...data.movies, ...data.series]) {
-        if (movie.tmdb?.id == tmdbId) {
-          debugPrint('🔍 findByTmdbId($tmdbId): encontrado ${movie.name}');
-          return movie;
+        if (movie.tmdb?.id != null && idsToFind.contains(movie.tmdb!.id)) {
+          results[movie.tmdb!.id!] = movie;
+          idsToFind.remove(movie.tmdb!.id);
         }
       }
+
+      // Otimização de memória: Se a categoria não estava carregada e foi carregada só pra isso,
+      // podemos considerar descarregar se a memória estiver cheia (o _manageCacheSize já faz isso periodicamente),
+      // mas como estamos num loop pesado, vamos deixar o LRU cuidar.
+
+      if (idsToFind.isEmpty) break; // Achou tudo
     }
     
-    debugPrint('🔍 findByTmdbId($tmdbId): não encontrado');
-    return null;
+    debugPrint('🏁 findBatchByTmdbIds: Encontrados ${results.length}/${tmdbIds.length} itens');
+    return results;
   }
 
   /// Obtém categoria pelo nome

@@ -101,15 +101,21 @@ class TrendingService {
   }
   
   /// Filtra os itens do TMDB para mostrar apenas os que existem no catálogo local
+  /// OTIMIZADO: Usa busca em lote (single pass)
   static Future<List<TrendingItem>> _filterByLocalCatalog(
     List<_TMDBTrendingResult> tmdbItems,
     JsonLazyService service,
   ) async {
+    // Coleta todos os IDs para buscar de uma vez
+    final tmdbIds = tmdbItems.map((e) => e.id).toList();
+    
+    // Busca em lote (muito mais rápido)
+    final foundItems = await service.findBatchByTmdbIds(tmdbIds);
+    
     final List<TrendingItem> filtered = [];
     
     for (final tmdbItem in tmdbItems) {
-      // Busca por TMDB ID no catálogo local
-      final localItem = await service.findByTmdbId(tmdbItem.id);
+      final localItem = foundItems[tmdbItem.id];
       
       if (localItem != null) {
         filtered.add(TrendingItem(
