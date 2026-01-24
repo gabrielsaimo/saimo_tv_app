@@ -109,7 +109,7 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
     );
   }
   
-  // Cria um Movie fictício para favoritar a série inteira
+  // Cria um Movie com episódios para favoritar a série inteira
   Movie get _seriesAsMovie {
     // Pega o primeiro episódio da primeira temporada
     Movie? firstEpisode;
@@ -125,9 +125,12 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
       id: 'series_${widget.series.name.hashCode}',
       name: _tmdb?.title ?? widget.series.name,
       url: firstEpisode?.url ?? '',
+      logo: widget.series.posterUrl,
       category: widget.series.category,
       type: MovieType.series,
+      seriesName: _tmdb?.title ?? widget.series.name,
       tmdb: _tmdb,
+      episodes: _buildEpisodesMap(), // IMPORTANTE: Inclui episódios para exibir no modal ao carregar do cache
       totalSeasons: _availableSeasons.length,
       totalEpisodes: widget.series.episodeCount,
     );

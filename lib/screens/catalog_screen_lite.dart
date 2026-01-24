@@ -249,6 +249,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   }
 
   void _onUp() {
+    final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
+    final skipTrending = (provider.selectedCategoryName == 'Todos' && !_isSearchMode && !_showingFavorites) || _showingFavorites;
+    
     setState(() {
       if (_section == 4) {
         // Na grid de categorias/conteúdo
@@ -256,13 +259,18 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           _contentRow--;
           _scrollToRow();
         } else {
-          // Sobe para tendências da semana (se existir) ou de hoje
-          if (_trendingWeek.isNotEmpty) {
-            _section = 3;
-          } else if (_trendingToday.isNotEmpty) {
-            _section = 2;
-          } else {
+          // Na tela "Todos" ou Favoritos, vai direto para filtros (sem passar por tendências)
+          if (skipTrending) {
             _section = 1;
+          } else {
+            // Sobe para tendências da semana (se existir) ou de hoje
+            if (_trendingWeek.isNotEmpty) {
+              _section = 3;
+            } else if (_trendingToday.isNotEmpty) {
+              _section = 2;
+            } else {
+              _section = 1;
+            }
           }
         }
       } else if (_section == 3) {
@@ -283,6 +291,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
   void _onDown() {
     final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
+    final skipTrending = (provider.selectedCategoryName == 'Todos' && !_isSearchMode && !_showingFavorites) || _showingFavorites;
     
     // Determina o número de itens baseado no modo atual
     int itemCount;
@@ -300,17 +309,24 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       if (_section == 0) {
         _section = 1;
       } else if (_section == 1) {
-        // Desce para tendências de hoje (se existir)
-        if (_trendingToday.isNotEmpty) {
-          _section = 2;
-          _trendingTodayIndex = 0;
-        } else if (_trendingWeek.isNotEmpty) {
-          _section = 3;
-          _trendingWeekIndex = 0;
-        } else {
+        // Na tela "Todos" ou Favoritos, vai direto para conteúdo (sem tendências)
+        if (skipTrending) {
           _section = 4;
           _contentRow = 0;
           _contentCol = 0;
+        } else {
+          // Desce para tendências de hoje (se existir)
+          if (_trendingToday.isNotEmpty) {
+            _section = 2;
+            _trendingTodayIndex = 0;
+          } else if (_trendingWeek.isNotEmpty) {
+            _section = 3;
+            _trendingWeekIndex = 0;
+          } else {
+            _section = 4;
+            _contentRow = 0;
+            _contentCol = 0;
+          }
         }
       } else if (_section == 2) {
         // De tendências de hoje para tendências da semana
@@ -493,17 +509,28 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       }
     } else if (_section == 4) {
       if (_showingFavorites) {
-        // Está mostrando favoritos - abre detalhe do filme favorito
+        // Está mostrando favoritos - abre detalhe do filme/série favorito
         final favProvider = context.read<MovieFavoritesProvider>();
         final favorites = favProvider.favorites;
         final idx = _contentRow * _columns + _contentCol;
         if (idx < favorites.length) {
           final movie = favorites[idx];
-          showDialog(
-            context: context,
-            barrierColor: Colors.black87,
-            builder: (_) => MovieDetailModal(movie: movie),
-          );
+          // Verifica se é série com episódios
+          if (movie.type == MovieType.series && movie.episodes != null && movie.episodes!.isNotEmpty) {
+            // Cria GroupedSeries a partir do Movie
+            final groupedSeries = _createGroupedSeriesFromMovie(movie);
+            showDialog(
+              context: context,
+              barrierColor: Colors.black87,
+              builder: (_) => SeriesModalOptimized(series: groupedSeries),
+            );
+          } else {
+            showDialog(
+              context: context,
+              barrierColor: Colors.black87,
+              builder: (_) => MovieDetailModal(movie: movie),
+            );
+          }
         }
       } else if (provider.selectedCategoryName == 'Todos' && !_isSearchMode) {
         // Seleciona categoria
@@ -685,13 +712,26 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   }
 
   void _showDetail(CatalogDisplayItem item) {
+    // Se é série com GroupedSeries já disponível
     if (item.type == DisplayItemType.series && item.series != null) {
       showDialog(
         context: context,
         barrierColor: Colors.black87,
         builder: (_) => SeriesModalOptimized(series: item.series!),
       );
-    } else if (item.movie != null) {
+    } 
+    // Se é série mas sem GroupedSeries (ex: favoritos com episodes no movie)
+    else if (item.type == DisplayItemType.series && item.movie != null && 
+             item.movie!.episodes != null && item.movie!.episodes!.isNotEmpty) {
+      final groupedSeries = _createGroupedSeriesFromMovie(item.movie!);
+      showDialog(
+        context: context,
+        barrierColor: Colors.black87,
+        builder: (_) => SeriesModalOptimized(series: groupedSeries),
+      );
+    }
+    // Filme normal
+    else if (item.movie != null) {
       showDialog(
         context: context,
         barrierColor: Colors.black87,
@@ -1316,8 +1356,6 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
   Widget _buildCategoryCards(LazyMoviesProvider provider) {
     final categories = provider.availableCategories.where((c) => c != 'Todos').toList();
-    final hasTrendingToday = _trendingToday.isNotEmpty || _loadingTrending;
-    final hasTrendingWeek = _trendingWeek.isNotEmpty || _loadingTrending;
     
     return ListView(
       controller: _scrollController,
@@ -1475,21 +1513,59 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   void _showTrendingDetail(TrendingItem item) {
     final movie = item.localMovie;
     
-    if (movie.type == MovieType.series || item.isSeries) {
-      // Mostra modal de série
+    // Se é série COM episódios, usa o modal de série otimizado
+    if ((movie.type == MovieType.series || item.isSeries) && 
+        movie.episodes != null && movie.episodes!.isNotEmpty) {
+      final groupedSeries = _createGroupedSeriesFromMovie(movie);
       showDialog(
         context: context,
         barrierColor: Colors.black87,
-        builder: (_) => MovieDetailModal(movie: movie),
+        builder: (_) => SeriesModalOptimized(series: groupedSeries),
       );
       return;
     }
     
-    // Filme ou série não agrupada
+    // Filme ou série sem episódios estruturados
     showDialog(
       context: context,
       barrierColor: Colors.black87,
       builder: (_) => MovieDetailModal(movie: movie),
+    );
+  }
+  
+  /// Converte um Movie (com episodes) para GroupedSeries
+  GroupedSeries _createGroupedSeriesFromMovie(Movie movie) {
+    final Map<int, List<Movie>> seasonMap = {};
+    
+    if (movie.episodes != null && movie.episodes!.isNotEmpty) {
+      for (final entry in movie.episodes!.entries) {
+        final seasonNum = int.tryParse(entry.key) ?? 1;
+        final epMovies = entry.value.map((ep) => Movie(
+          id: ep.id,
+          name: ep.name,
+          url: ep.url,
+          logo: movie.posterUrl,
+          category: movie.category,
+          type: MovieType.series,
+          isAdult: movie.isAdult,
+          seriesName: movie.seriesName ?? movie.tmdb?.title ?? movie.name,
+          season: seasonNum,
+          episode: ep.episode,
+          tmdb: movie.tmdb,
+        )).toList();
+        epMovies.sort((a, b) => (a.episode ?? 0).compareTo(b.episode ?? 0));
+        seasonMap[seasonNum] = epMovies;
+      }
+    }
+    
+    return GroupedSeries(
+      id: movie.id,
+      name: movie.seriesName ?? movie.tmdb?.title ?? movie.name,
+      logo: movie.posterUrl,
+      category: movie.category,
+      seasons: seasonMap,
+      isAdult: movie.isAdult,
+      tmdb: movie.tmdb,
     );
   }
 

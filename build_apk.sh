@@ -72,7 +72,7 @@ echo -e "${GREEN}✅ Flutter encontrado: $(flutter --version | head -1)${NC}"
 # ========== 2. VERIFICAR DEPENDÊNCIAS ==========
 echo ""
 echo -e "${BLUE}🔍 Verificando dependências...${NC}"
-flutter doctor --android-only
+flutter doctor
 
 # ========== 3. INSTALAR PACOTES ==========
 echo ""

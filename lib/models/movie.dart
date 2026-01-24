@@ -306,6 +306,20 @@ class Movie {
   }
 
   Map<String, dynamic> toJson() {
+    // Serializa episodes se existir
+    Map<String, dynamic>? episodesJson;
+    if (episodes != null && episodes!.isNotEmpty) {
+      episodesJson = {};
+      episodes!.forEach((season, eps) {
+        episodesJson![season] = eps.map((ep) => {
+          'id': ep.id,
+          'name': ep.name,
+          'url': ep.url,
+          'episode': ep.episode,
+        }).toList();
+      });
+    }
+    
     return {
       'id': id,
       'name': name,
@@ -319,6 +333,7 @@ class Movie {
       'episode': episode,
       'totalEpisodes': totalEpisodes,
       'totalSeasons': totalSeasons,
+      if (episodes != null) 'episodes': episodesJson,
       if (tmdb != null) 'tmdb': tmdb!.toJson(),
     };
   }

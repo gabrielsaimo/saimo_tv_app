@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/storage_service.dart';
+import '../services/version_manager.dart'; // Import VersionManager
 import '../utils/theme.dart';
 import '../utils/tv_constants.dart';
+import '../widgets/update_dialog.dart'; // Import UpdateDialog
 
 /// Tela de Splash com animação
 class SplashScreen extends StatefulWidget {
@@ -59,6 +61,32 @@ class _SplashScreenState extends State<SplashScreen>
     // Carrega dados necessários
     final channelsProvider = context.read<ChannelsProvider>();
     await channelsProvider.loadChannels();
+
+    // === VERIFICAÇÃO DE ATUALIZAÇÃO ===
+    try {
+      final updateResult = await VersionManager.checkUpdate();
+      
+      if (updateResult.hasUpdate && mounted) {
+        // Mostra diálogo de atualização e PAUSA O FLUXO
+        await showDialog(
+          context: context,
+          barrierDismissible: !updateResult.forceUpdate,
+          builder: (context) => UpdateDialog(
+            currentVersion: updateResult.currentVersion ?? 'Unknown',
+            newVersion: updateResult.newVersion ?? 'Unknown',
+            forceUpdate: updateResult.forceUpdate,
+          ),
+        );
+        
+        // Se for forceUpdate, o diálogo não fecha (WillPopScope), 
+        // mas se o usuário fechar (se possível), checamos se devemos prosseguir
+        if (updateResult.forceUpdate) return; // Não navega para proxima tela
+      }
+    } catch (e) {
+      // Falha silenciosa na verificação de update, prossegue normal
+      debugPrint('Erro no check de update: $e');
+    }
+    // ==================================
 
     // Aguarda animação completar
     await Future.delayed(const Duration(milliseconds: 2500));
