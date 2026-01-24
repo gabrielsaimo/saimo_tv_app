@@ -250,7 +250,8 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
   void _onUp() {
     final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
-    final skipTrending = (provider.selectedCategoryName == 'Todos' && !_isSearchMode && !_showingFavorites) || _showingFavorites;
+    // Pula tendências em qualquer tela que NÃO seja a categoria específica de Tendências
+    final skipTrending = provider.selectedCategoryName != '📊 Tendências' || _showingFavorites || _isSearchMode;
     
     setState(() {
       if (_section == 4) {
@@ -259,7 +260,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           _contentRow--;
           _scrollToRow();
         } else {
-          // Na tela "Todos" ou Favoritos, vai direto para filtros (sem passar por tendências)
+          // Se deve pular tendências, vai direto para filtros
           if (skipTrending) {
             _section = 1;
           } else {
@@ -291,7 +292,8 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
   void _onDown() {
     final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
-    final skipTrending = (provider.selectedCategoryName == 'Todos' && !_isSearchMode && !_showingFavorites) || _showingFavorites;
+    // Pula tendências em qualquer tela que NÃO seja a categoria específica de Tendências
+    final skipTrending = provider.selectedCategoryName != '📊 Tendências' || _showingFavorites || _isSearchMode;
     
     // Determina o número de itens baseado no modo atual
     int itemCount;
@@ -300,6 +302,8 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       itemCount = favProvider.count;
     } else if (provider.selectedCategoryName == 'Todos') {
       itemCount = provider.availableCategories.length - 1; // Exclui "Todos"
+    } else if (provider.selectedCategoryName == '📊 Tendências') {
+      itemCount = 0; // Tendências não tem grid na secao 4
     } else {
       itemCount = provider.displayItems.length;
     }
@@ -309,7 +313,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       if (_section == 0) {
         _section = 1;
       } else if (_section == 1) {
-        // Na tela "Todos" ou Favoritos, vai direto para conteúdo (sem tendências)
+        // Se deve pular tendências, vai para conteúdo/categorias
         if (skipTrending) {
           _section = 4;
           _contentRow = 0;
@@ -323,9 +327,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
             _section = 3;
             _trendingWeekIndex = 0;
           } else {
-            _section = 4;
-            _contentRow = 0;
-            _contentCol = 0;
+            // Se não tem tendências, não faz nada (não existe grid)
           }
         }
       } else if (_section == 2) {
@@ -334,15 +336,10 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           _section = 3;
           _trendingWeekIndex = 0;
         } else {
-          _section = 4;
-          _contentRow = 0;
-          _contentCol = 0;
+          // Fim (não tem grid em Tendências)
         }
       } else if (_section == 3) {
-        // De tendências da semana para categorias
-        _section = 4;
-        _contentRow = 0;
-        _contentCol = 0;
+        // Fim (não tem grid em Tendências)
       } else if (_section == 4 && _contentRow < rows - 1) {
         _contentRow++;
         _scrollToRow();
@@ -1134,8 +1131,49 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       return _buildCategoryCards(provider);
     }
     
+    // Se categoria é "📊 Tendências", mostra seções de hoje e semana
+    if (provider.selectedCategoryName == '📊 Tendências') {
+      return _buildTrendingContent(provider);
+    }
+    
     // Senão, mostra grid de filmes/séries
     return _buildContentGrid(provider);
+  }
+  
+  /// Conteúdo especial para categoria Tendências com seções Hoje e Semana
+  Widget _buildTrendingContent(LazyMoviesProvider provider) {
+    return ListView(
+      controller: _scrollController,
+      padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
+      children: [
+        // === TENDÊNCIAS DE HOJE ===
+        if (_trendingToday.isNotEmpty || _loadingTrending)
+          _buildTrendingSection(
+            title: '🔥 Tendências de Hoje',
+            items: _trendingToday,
+            isLoading: _loadingTrending,
+            isFocused: _section == 2,
+            selectedIndex: _trendingTodayIndex,
+            scrollController: _trendingTodayScroll,
+          ),
+        
+        if (_trendingToday.isNotEmpty || _loadingTrending) 
+          const SizedBox(height: 20),
+        
+        // === TENDÊNCIAS DA SEMANA ===
+        if (_trendingWeek.isNotEmpty || _loadingTrending)
+          _buildTrendingSection(
+            title: '📅 Tendências da Semana',
+            items: _trendingWeek,
+            isLoading: _loadingTrending,
+            isFocused: _section == 3,
+            selectedIndex: _trendingWeekIndex,
+            scrollController: _trendingWeekScroll,
+          ),
+        
+        const SizedBox(height: 20),
+      ],
+    );
   }
   
   /// Grid de favoritos
