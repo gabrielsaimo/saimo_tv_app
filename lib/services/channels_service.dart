@@ -70,6 +70,7 @@ class ChannelsService {
           logo: logo,
           category: category,
           channelNumber: index++, // Assign temporary number, will be re-assigned later
+          isAdult: category == ChannelCategory.adulto, // Fix: Explicitly set based on category
         ));
       } catch (e) {
         print('Error parsing channel match: $e');
