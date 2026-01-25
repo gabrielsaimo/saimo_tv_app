@@ -536,68 +536,69 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
     }
 
     // === NAVEGAÇÃO D-PAD ===
-    // Esquerda: Move foco para esquerda, ou diminui valor do elemento focado
+    // Esquerda
     if (key == LogicalKeyboardKey.arrowLeft) {
       if (_currentFocus == _FocusElement.seek) {
-        // Se estiver no seek, retrocede 10s
         _seekRelative(-10);
       } else {
         HapticFeedback.selectionClick();
-        if (_currentFocus == _FocusElement.nextEpisode && _showNextEpisodeButton) {
-          // De próximo episódio volta para seek
+        if (_currentFocus == _FocusElement.nextEpisode) {
+          // De nextEpisode vai para seek (é mais intuitivo voltar para a barra)
           setState(() => _currentFocus = _FocusElement.seek);
         } else if (_currentFocus == _FocusElement.volume) {
-          // Na seção de volume, diminui volume
-          _adjustVolume(-0.1);
+          // De volume vai para playPause
+          setState(() => _currentFocus = _FocusElement.playPause);
         } else if (_currentFocus == _FocusElement.playPause) {
-          // De play/pause volta para volume
-          setState(() => _currentFocus = _FocusElement.volume);
+          // De playPause mantém foco (fim da linha à esquerda)
+          // Opcional: poderia ir para volume (ciclo)
         }
       }
       return;
     }
 
-    // Direita: Move foco para direita, ou aumenta valor do elemento focado
+    // Direita
     if (key == LogicalKeyboardKey.arrowRight) {
       if (_currentFocus == _FocusElement.seek) {
-        // Se estiver no seek, avança 10s
         _seekRelative(10);
       } else {
         HapticFeedback.selectionClick();
         if (_currentFocus == _FocusElement.playPause) {
-          // De play/pause vai para volume
+          // De playPause vai para volume
           setState(() => _currentFocus = _FocusElement.volume);
         } else if (_currentFocus == _FocusElement.volume) {
-          // Na seção de volume, aumenta volume
-          _adjustVolume(0.1);
-          return;
+          // De volume vai para nextEpisode (se existir)
+          if (_showNextEpisodeButton) {
+            setState(() => _currentFocus = _FocusElement.nextEpisode);
+          }
         }
       }
       return;
     }
 
-    // Cima: Diminui o valor ou muda foco verticalmente (para play/pause)
+    // Cima: Move foco visualmente para CIMA
     if (key == LogicalKeyboardKey.arrowUp) {
       HapticFeedback.selectionClick();
-      if (_currentFocus == _FocusElement.seek) {
-        // De seek vai para play/pause
-        setState(() => _currentFocus = _FocusElement.playPause);
-      } else if (_currentFocus == _FocusElement.nextEpisode) {
-        // De próximo episódio vai para play/pause
-        setState(() => _currentFocus = _FocusElement.playPause);
+      if (_currentFocus == _FocusElement.playPause || _currentFocus == _FocusElement.volume) {
+        // Dos controles de baixo, SOBE para o seek
+        setState(() => _currentFocus = _FocusElement.seek);
+      } else if (_currentFocus == _FocusElement.seek) {
+        // Do seek, SOBE para nextEpisode (se existir)
+        if (_showNextEpisodeButton) {
+          setState(() => _currentFocus = _FocusElement.nextEpisode);
+        }
       }
       return;
     }
 
-    // Baixo: Aumenta o valor ou muda foco verticalmente (para seek)
+    // Baixo: Move foco visualmente para BAIXO
     if (key == LogicalKeyboardKey.arrowDown) {
       HapticFeedback.selectionClick();
-      if (_currentFocus == _FocusElement.playPause) {
-        // De play/pause vai para seek
+      if (_currentFocus == _FocusElement.nextEpisode) {
+        // De nextEpisode, DESCE para o seek
         setState(() => _currentFocus = _FocusElement.seek);
-      } else if (_currentFocus == _FocusElement.volume) {
-        // De volume vai para seek
-        setState(() => _currentFocus = _FocusElement.seek);
+      } else if (_currentFocus == _FocusElement.seek) {
+        // Do seek, DESCE para playPause (controles principais)
+        setState(() => _currentFocus = _FocusElement.playPause);
       }
       return;
     }
@@ -605,7 +606,8 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
     // Select/Enter/A: Ativa a ação do elemento focado
     if (key == LogicalKeyboardKey.select ||
         key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.gameButtonA) {
+        key == LogicalKeyboardKey.gameButtonA ||
+        key == LogicalKeyboardKey.numpadEnter) {
       HapticFeedback.mediumImpact();
       if (_currentFocus == _FocusElement.playPause) {
         _togglePlayPause();
