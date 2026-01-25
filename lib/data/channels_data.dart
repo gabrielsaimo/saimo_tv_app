@@ -62,6 +62,75 @@ class ChannelsData {
     return grouped;
   }
 
+  /// Overrides locais para canais específicos (ex: logos customizados)
+  static final Map<String, Channel> localOverrides = {
+    '24h-simpsons': Channel(
+      id: '24h-simpsons',
+      name: '24h Simpsons',
+      url: '$_streamBase/24h_simpsons.m3u8',
+      logo: 'asset:assets/icons/simpsons24h.png',
+      category: ChannelCategory.infantil,
+    ),
+    '24h-dragonball': Channel(
+      id: '24h-dragonball', 
+      name: '24h Dragon Ball',
+      url: '$_streamBase/24h_dragonball.m3u8',
+      logo: 'asset:assets/icons/dragomball24h.png',
+      category: ChannelCategory.infantil,
+    ),
+    '24h-odeia-chris': Channel(
+      id: '24h-odeia-chris',
+      name: '24h Todo Mundo Odeia o Chris',
+      url: '$_streamBase/24h_odeiachris.m3u8',
+      logo: 'asset:assets/icons/todomundoodeiaochris.webp',
+      category: ChannelCategory.infantil,
+    ),
+  };
+
+  /// Mescla canais remotos com overrides locais
+  static List<Channel> mergeChannels(List<Channel> remoteChannels, {bool includeAdult = false}) {
+    final Map<String, Channel> channelMap = {};
+    
+    // Adiciona remotos
+    for (final channel in remoteChannels) {
+      channelMap[channel.id] = channel;
+    }
+    
+    // Aplica overrides
+    localOverrides.forEach((id, overrideChannel) {
+      if (channelMap.containsKey(id)) {
+        // Se já existe, atualiza mantendo a URL se o override não tiver (ou força o override completo)
+        // Aqui vamos forçar o override completo para garantir que logo/nome/url fiquem como queremos
+        channelMap[id] = overrideChannel;
+      } else {
+        // Se não existe no remoto mas existe no local, adiciona
+        channelMap[id] = overrideChannel;
+      }
+    });
+
+    final channels = channelMap.values
+        .where((ch) => includeAdult || !ch.isAdult)
+        .toList();
+    
+    // Ordena
+    channels.sort((a, b) {
+      final catIndexA = ChannelCategory.getIndex(a.category);
+      final catIndexB = ChannelCategory.getIndex(b.category);
+      
+      if (catIndexA != catIndexB) {
+        return catIndexA.compareTo(catIndexB);
+      }
+      return a.name.compareTo(b.name);
+    });
+
+    // Renumera
+    for (int i = 0; i < channels.length; i++) {
+      channels[i] = channels[i].copyWith(channelNumber: i + 1);
+    }
+
+    return channels;
+  }
+
   /// Lista bruta de canais - ATUALIZADA CONFORME DOCUMENTAÇÃO
   static final List<Channel> _rawChannels = [
     // ===== TV ABERTA =====

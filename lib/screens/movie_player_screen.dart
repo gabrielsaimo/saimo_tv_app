@@ -23,11 +23,12 @@ class MoviePlayerScreen extends StatefulWidget {
   State<MoviePlayerScreen> createState() => _MoviePlayerScreenState();
 }
 
-class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
+class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindingObserver {
   VideoPlayerController? _videoController;
   Timer? _hideControlsTimer;
   Timer? _progressTimer;
   Timer? _saveProgressTimer;
+  Timer? _wakelockTimer; // Timer para heartbeat do wakelock
   final FocusNode _mainFocusNode = FocusNode();
   final FocusNode _nextEpisodeFocusNode = FocusNode();
   final KeyDebouncer _debouncer = KeyDebouncer();
@@ -57,7 +58,9 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _enableWakelock();
+    _startWakelockHeartbeat();
     _startHideControlsTimer();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -94,9 +97,20 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
       }
     });
   }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _enableWakelock();
+      if (_videoController != null && !_videoController!.value.isPlaying && _error == null) {
+         _videoController!.play();
+      }
+    }
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _disableWakelock();
     _saveProgress();
     _videoController?.dispose();
@@ -104,6 +118,7 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
     _progressTimer?.cancel();
     _saveProgressTimer?.cancel();
     _autoPlayTimer?.cancel();
+    _wakelockTimer?.cancel();
     _mainFocusNode.dispose();
     _nextEpisodeFocusNode.dispose();
     super.dispose();
@@ -111,10 +126,20 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
 
   void _enableWakelock() async {
     try {
-      await WakelockPlus.enable();
+      if (await WakelockPlus.enabled == false) {
+        await WakelockPlus.enable();
+      }
     } catch (e) {
       debugPrint('Erro ao ativar wakelock: $e');
     }
+  }
+
+  /// Timer periódico (Heartbeat) para garantir que o Wakelock não caia
+  void _startWakelockHeartbeat() {
+    _wakelockTimer?.cancel();
+    _wakelockTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      _enableWakelock();
+    });
   }
 
   void _disableWakelock() async {
@@ -513,37 +538,39 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
     // === NAVEGAÇÃO D-PAD ===
     // Esquerda: Move foco para esquerda, ou diminui valor do elemento focado
     if (key == LogicalKeyboardKey.arrowLeft) {
-      HapticFeedback.selectionClick();
-      if (_currentFocus == _FocusElement.nextEpisode && _showNextEpisodeButton) {
-        // De próximo episódio volta para seek
-        setState(() => _currentFocus = _FocusElement.seek);
-      } else if (_currentFocus == _FocusElement.seek) {
-        // De seek volta para volume
-        setState(() => _currentFocus = _FocusElement.volume);
-      } else if (_currentFocus == _FocusElement.volume) {
-        // Na seção de volume, diminui volume
-        _adjustVolume(-0.1);
-      } else if (_currentFocus == _FocusElement.playPause) {
-        // De play/pause volta para volume
-        setState(() => _currentFocus = _FocusElement.volume);
+      if (_currentFocus == _FocusElement.seek) {
+        // Se estiver no seek, retrocede 10s
+        _seekRelative(-10);
+      } else {
+        HapticFeedback.selectionClick();
+        if (_currentFocus == _FocusElement.nextEpisode && _showNextEpisodeButton) {
+          // De próximo episódio volta para seek
+          setState(() => _currentFocus = _FocusElement.seek);
+        } else if (_currentFocus == _FocusElement.volume) {
+          // Na seção de volume, diminui volume
+          _adjustVolume(-0.1);
+        } else if (_currentFocus == _FocusElement.playPause) {
+          // De play/pause volta para volume
+          setState(() => _currentFocus = _FocusElement.volume);
+        }
       }
       return;
     }
 
     // Direita: Move foco para direita, ou aumenta valor do elemento focado
     if (key == LogicalKeyboardKey.arrowRight) {
-      HapticFeedback.selectionClick();
-      if (_currentFocus == _FocusElement.playPause) {
-        // De play/pause vai para volume
-        setState(() => _currentFocus = _FocusElement.volume);
-      } else if (_currentFocus == _FocusElement.volume) {
-        // Na seção de volume, aumenta volume
-        _adjustVolume(0.1);
-        return;
-      } else if (_currentFocus == _FocusElement.seek) {
-        // De seek vai para próximo episódio (se existir)
-        if (_showNextEpisodeButton) {
-          setState(() => _currentFocus = _FocusElement.nextEpisode);
+      if (_currentFocus == _FocusElement.seek) {
+        // Se estiver no seek, avança 10s
+        _seekRelative(10);
+      } else {
+        HapticFeedback.selectionClick();
+        if (_currentFocus == _FocusElement.playPause) {
+          // De play/pause vai para volume
+          setState(() => _currentFocus = _FocusElement.volume);
+        } else if (_currentFocus == _FocusElement.volume) {
+          // Na seção de volume, aumenta volume
+          _adjustVolume(0.1);
+          return;
         }
       }
       return;
@@ -597,6 +624,13 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
     }
     if (key == LogicalKeyboardKey.mediaFastForward) {
       _seekRelative(10);
+      return;
+    }
+
+    // Play/Pause
+    if (key == LogicalKeyboardKey.mediaPlayPause || 
+        key == LogicalKeyboardKey.space) {
+      _togglePlayPause();
       return;
     }
 

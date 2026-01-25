@@ -27,11 +27,12 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> {
+class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
   VideoPlayerController? _videoController;
   Timer? _hideControlsTimer;
   Timer? _progressTimer;
   Timer? _videoHealthTimer; // Timer para verificar saúde do vídeo e evitar tela preta
+  Timer? _wakelockTimer; // Timer para heartbeat do wakelock
   final VolumeBoostService _volumeBoostService = VolumeBoostService();
   final KeyDebouncer _debouncer = KeyDebouncer();
   bool _showControls = true;
@@ -69,7 +70,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _enableWakelock();
+    _startWakelockHeartbeat();
     _initializePlayer();
     _startHideControlsTimer();
     _setupEpgProgressListener();
@@ -77,13 +80,33 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _startVideoHealthMonitor();
   }
   
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _enableWakelock();
+      if (_videoController != null && !_videoController!.value.isPlaying && _error == null) {
+         _videoController!.play();
+      }
+    }
+  }
+  
   /// Mantém a tela ligada durante reprodução de vídeo
   void _enableWakelock() async {
     try {
-      await WakelockPlus.enable();
+      if (await WakelockPlus.enabled == false) {
+        await WakelockPlus.enable();
+      }
     } catch (e) {
       debugPrint('Erro ao ativar wakelock: $e');
     }
+  }
+
+  /// Timer periódico (Heartbeat) para garantir que o Wakelock não caia
+  void _startWakelockHeartbeat() {
+    _wakelockTimer?.cancel();
+    _wakelockTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      _enableWakelock();
+    });
   }
   
   /// Desativa o wakelock
@@ -127,6 +150,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       // Tenta dar play novamente
       await _videoController!.play();
+      _enableWakelock(); // Garante wakelock ao retomar
       
       // Se ainda não funcionar depois de 3 segundos, reinicia
       Future.delayed(const Duration(seconds: 3), () {
@@ -173,6 +197,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _disableWakelock();
     _volumeBoostService.disableBoost(); // Desativa boost ao sair
     EpgService().removeProgressListener(_onEpgProgress);
@@ -180,6 +205,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _hideControlsTimer?.cancel();
     _progressTimer?.cancel();
     _videoHealthTimer?.cancel();
+    _wakelockTimer?.cancel();
     _channelInputTimer?.cancel();
     _channelListHideTimer?.cancel();
     _channelListController.dispose();
@@ -548,6 +574,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
         setState(() => _showControls = !_showControls);
         break;
         
+      // Teclas de Mídia Rewind -> Canal Anterior
+      case LogicalKeyboardKey.mediaRewind:
+        {
+          final newIndex = (_selectedChannelIndex - 1).clamp(0, channels.length - 1);
+          if (newIndex != _selectedChannelIndex && newIndex < channels.length) {
+            setState(() => _selectedChannelIndex = newIndex);
+            _changeChannel(channels[newIndex]);
+          }
+        }
+        break;
+
+      // Teclas de Mídia FastForward -> Próximo Canal
+      case LogicalKeyboardKey.mediaFastForward:
+        {
+          final newIndex = (_selectedChannelIndex + 1).clamp(0, channels.length - 1);
+          if (newIndex != _selectedChannelIndex && newIndex < channels.length) {
+            setState(() => _selectedChannelIndex = newIndex);
+            _changeChannel(channels[newIndex]);
+          }
+        }
+        break;
+
       // Teclas numéricas (0-9)
       case LogicalKeyboardKey.digit0:
       case LogicalKeyboardKey.numpad0:
@@ -717,19 +765,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
-  void _changeChannel(Channel channel) async {
+  void _changeChannel(Channel channel) {
+    if (!mounted) return;
+    
+    // Atualiza estado local imediatamente para feedback instantâneo
+    setState(() {
+      _selectedChannelIndex = context.read<ChannelsProvider>().channels.indexWhere((c) => c.id == channel.id);
+      _isBuffering = true; // Mostra loading imediatamente
+      _error = null;
+    });
+    
+    // Atualiza provider e inicia player (Fire-and-forget para storage/history)
     final playerProvider = context.read<PlayerProvider>();
-    final channelsProvider = context.read<ChannelsProvider>();
+    playerProvider.setChannel(channel); // Não esperamos o await aqui para não travar a UI
     
-    // Atualiza o índice do canal selecionado
-    final index = channelsProvider.channels.indexWhere((c) => c.id == channel.id);
-    if (index >= 0) {
-      setState(() {
-        _selectedChannelIndex = index;
-      });
-    }
-    
-    await playerProvider.setChannel(channel);
+    // Reinicia player imediatamente
     _initializePlayer();
   }
 

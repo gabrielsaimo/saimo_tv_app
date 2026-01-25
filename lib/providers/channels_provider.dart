@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/channel.dart';
 import '../models/category.dart';
 import '../data/channels_data.dart';
+import '../services/channels_service.dart';
 import '../services/storage_service.dart';
 
 /// Provider de canais
@@ -77,9 +78,25 @@ class ChannelsProvider with ChangeNotifier {
       final storage = StorageService();
       _showAdultChannels = await storage.isAdultModeUnlocked();
 
-      // Carrega canais
-      _channels = ChannelsData.getAllChannels(includeAdult: _showAdultChannels);
-      _channelsByCategory = ChannelsData.getChannelsByCategory(includeAdult: _showAdultChannels);
+      // Tenta carregar do GitHub
+      try {
+        final service = ChannelsService();
+        final remoteChannels = await service.fetchChannels();
+        
+        // Mescla com overrides locais
+        _channels = ChannelsData.mergeChannels(remoteChannels, includeAdult: _showAdultChannels);
+        
+        // Atualiza mapa de categorias
+        _channelsByCategory = {};
+        for (final channel in _channels) {
+          _channelsByCategory.putIfAbsent(channel.category, () => []).add(channel);
+        }
+      } catch (e) {
+        print('Erro ao carregar canais remotos: $e');
+        // Fallback para dados locais estáticos
+        _channels = ChannelsData.getAllChannels(includeAdult: _showAdultChannels);
+        _channelsByCategory = ChannelsData.getChannelsByCategory(includeAdult: _showAdultChannels);
+      }
 
       _error = null;
     } catch (e) {
