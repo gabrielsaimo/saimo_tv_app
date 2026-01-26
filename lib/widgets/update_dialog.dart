@@ -96,13 +96,24 @@ class UpdateDialog extends StatelessWidget {
                   ),
                 ),
               ),
-              if (!forceUpdate)
+            if (!forceUpdate)
                 Padding(
                   padding: const EdgeInsets.only(top: 16),
                   child: TextButton(
                     onPressed: () => Navigator.of(context).pop(),
                     child: const Text(
                       'Lembrar depois',
+                      style: TextStyle(color: SaimoTheme.textTertiary),
+                    ),
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text(
+                      'Fechar',
                       style: TextStyle(color: SaimoTheme.textTertiary),
                     ),
                   ),
