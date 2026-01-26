@@ -18,6 +18,9 @@ import '../widgets/program_info.dart';
 import '../widgets/channel_logo.dart';
 import '../services/epg_service.dart';
 import '../services/volume_boost_service.dart';
+import 'package:floating/floating.dart';
+import '../services/casting_service.dart';
+import '../widgets/options_modal.dart';
 
 /// Tela do Player de Vídeo
 class PlayerScreen extends StatefulWidget {
@@ -66,6 +69,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   double _startVolume = 1.0;
   bool _isDraggingVolume = false;
   bool _isDraggingChannel = false;
+  final Floating _floating = Floating();
 
   @override
   void initState() {
@@ -88,6 +92,71 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
          _videoController!.play();
       }
     }
+  }
+
+  Future<void> _enablePip() async {
+    try {
+      if (await _floating.isPipAvailable) {
+        await _floating.enable(const ImmediatePiP());
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('PiP não disponível neste dispositivo')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro PiP: $e');
+    }
+  }
+
+  void _showCastDialogStandalone() {
+    final playerProvider = context.read<PlayerProvider>();
+    final channel = playerProvider.currentChannel;
+    if (channel == null) return;
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.transparent, 
+      builder: (context) => OptionsModal(
+        title: channel.name,
+        isFavorite: context.read<FavoritesProvider>().isFavorite(channel.id), 
+        onToggleFavorite: () {
+            context.read<FavoritesProvider>().toggleFavorite(channel.id);
+        }, 
+        onCastSelected: (device) {
+           final castingService = CastingService();
+           castingService.castMedia(
+             device: device,
+             url: channel.url,
+             title: channel.name,
+             imageUrl: channel.logoUrl,
+           );
+           ScaffoldMessenger.of(context).showSnackBar(
+             SnackBar(content: Text('Transmitindo para ${device.name}...')),
+           );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTouchButton({required IconData icon, required VoidCallback onTap, required String tooltip}) {
+    return FocusableActionDetector(
+      focusNode: FocusNode(canRequestFocus: false), // NO D-PAD
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(50),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.5),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white30, width: 1),
+          ),
+          child: Icon(icon, color: Colors.white, size: 28),
+        ),
+      ),
+    );
   }
   
   /// Mantém a tela ligada durante reprodução de vídeo
@@ -969,6 +1038,30 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               // Indicador de carregamento EPG (canto superior direito)
               if (_epgTotal > 0 && _epgLoaded < _epgTotal)
                 _buildEpgLoadingIndicator(),
+              
+              if (_showControls && _channelNumberInput.isEmpty)
+                Positioned(
+                  top: 50,
+                  right: 20,
+                  child: SafeArea(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildTouchButton(
+                          icon: Icons.picture_in_picture_alt,
+                          onTap: _enablePip,
+                          tooltip: 'PiP',
+                        ),
+                        const SizedBox(width: 12),
+                        _buildTouchButton(
+                          icon: Icons.cast,
+                          onTap: _showCastDialogStandalone,
+                          tooltip: 'Transmitir',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               
               // Número do canal sendo digitado
               if (_channelNumberInput.isNotEmpty)

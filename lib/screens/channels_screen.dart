@@ -13,6 +13,8 @@ import '../providers/epg_provider.dart';
 import '../providers/player_provider.dart';
 import '../utils/theme.dart';
 import '../utils/tv_constants.dart';
+import '../widgets/options_modal.dart';
+import '../services/casting_service.dart';
 
 /// Tela de Canais Premium - Design moderno para provedores de TV
 /// Otimizada para TV, Tablet e Mobile com navegação D-Pad fluida
@@ -257,6 +259,55 @@ class _ChannelsScreenState extends State<ChannelsScreen>
         if (mounted) setState(() => _showMiniGuide = false);
       });
     }
+  }
+
+  void _showChannelOptions(Channel channel) {
+    final favoritesProvider = context.read<FavoritesProvider>();
+    final isFavorite = favoritesProvider.isFavorite(channel.id);
+    
+    showDialog(
+      context: context,
+      builder: (context) => OptionsModal(
+        title: channel.name,
+        isFavorite: isFavorite,
+        onToggleFavorite: () {
+          favoritesProvider.toggleFavorite(channel.id);
+          // Force rebuild to show updated status if modal stays open or just for background
+          setState(() {}); 
+        },
+        onPlay: () {
+          // Close modal and play
+          _onChannelSelected(channel);
+        },
+        onCastSelected: (device) {
+          final castingService = CastingService();
+          try {
+             castingService.castMedia(
+               device: device,
+               url: channel.url,
+               title: channel.name,
+               imageUrl: channel.logoUrl,
+             );
+             ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(
+                 content: Text('Transmitindo para ${device.name}...'),
+                 backgroundColor: SaimoTheme.primary,
+               ),
+             );
+          } catch (e) {
+             ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(
+                 content: Text('Erro ao transmitir: $e'),
+                 backgroundColor: SaimoTheme.error,
+               ),
+             );
+          }
+        },
+      ),
+    ).then((_) {
+      // Return focus to grid when modal closes
+      _focusOnGrid();
+    });
   }
 
   void _scrollCategoryIntoView(int index) {
@@ -1205,7 +1256,7 @@ class _ChannelsScreenState extends State<ChannelsScreen>
             onExit: (_) => setState(() => _hoveredChannelIndex = -1),
             child: GestureDetector(
               onTap: () => _onChannelSelected(channel),
-              onLongPress: () => _onFavoriteToggle(channel.id),
+              onLongPress: () => _showChannelOptions(channel),
               child: _buildChannelCardContent(
                 channel: channel,
                 isFavorite: isFavorite,

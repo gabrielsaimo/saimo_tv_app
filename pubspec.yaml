@@ -49,9 +49,24 @@ dependencies:
   
   # Manter tela ligada
   wakelock_plus: ^1.2.8
+
+  # Picture in Picture
+  floating: ^6.0.0
   
   # URL Launcher
   url_launcher: ^6.3.0
+  
+  # Casting / DLNA
+  dart_chromecast:
+    git:
+      url: https://github.com/terrabythia/dart_chromecast.git
+      ref: master
+  dlna_dart: ^0.1.0
+  xml: ^6.3.0
+
+dependency_overrides:
+  http: ^1.6.0
+  cli_util: ^0.4.2
 
 dev_dependencies:
   flutter_test:

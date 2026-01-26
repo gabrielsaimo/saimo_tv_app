@@ -4,6 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:http/http.dart' as http;
+import 'package:floating/floating.dart';
+import '../services/casting_service.dart';
+import '../widgets/options_modal.dart';
 import '../models/movie.dart';
 import '../utils/theme.dart';
 import '../utils/tv_constants.dart';
@@ -32,6 +35,7 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
   final FocusNode _mainFocusNode = FocusNode();
   final FocusNode _nextEpisodeFocusNode = FocusNode();
   final KeyDebouncer _debouncer = KeyDebouncer();
+  final Floating _floating = Floating();
   
   bool _showControls = true;
   bool _isBuffering = true;
@@ -106,6 +110,59 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
          _videoController!.play();
       }
     }
+  }
+
+  Future<void> _enablePip() async {
+    try {
+      if (await _floating.isPipAvailable) {
+        // Enters PiP mode. 
+        // Note: On Android, the Activity takes care of video surface.
+        // We might need to handle ratio.
+        await _floating.enable(const ImmediatePiP());
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('PiP não disponível neste dispositivo')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Erro PiP: $e');
+    }
+  }
+
+  double get _aspectRatio {
+    if (_videoController != null && _videoController!.value.isInitialized) {
+      return _videoController!.value.aspectRatio;
+    }
+    return 16 / 9;
+  }
+
+  void _showCastDialogStandalone() {
+    showDialog(
+      context: context,
+      barrierColor: Colors.transparent, // Let user see video behind if possible? No, overlay.
+      builder: (context) => OptionsModal(
+        title: _currentMovie?.name ?? 'Vídeo',
+        isFavorite: false, // Contextual
+        onToggleFavorite: () {}, // No favorite logic here per se, or connect if needed
+        onCastSelected: (device) {
+           final castingService = CastingService();
+           castingService.castMedia(
+             device: device,
+             url: _currentMovie!.url,
+             title: _currentMovie!.name,
+             // Add image and subtitle if available
+             imageUrl: _currentMovie!.posterUrl,
+           );
+           ScaffoldMessenger.of(context).showSnackBar(
+             SnackBar(content: Text('Transmitindo para ${device.name}...')),
+           );
+        },
+        // We set initial focus to Cast logic inside modal?
+        // Actually OptionsModal defaults to Play or Favorite.
+        // We might need to modify OptionsModal to auto-expand Cast if we want direct Cast access.
+        // But the user just asked for a button. This is fine.
+      ),
+    );
   }
 
   @override
@@ -1089,7 +1146,42 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
                 ),
               ),
             ),
+          // Cast & PiP Buttons (Touch/Mouse)
+           Row(
+            children: [
+              _buildTouchButton(
+                icon: Icons.picture_in_picture_alt,
+                onTap: _enablePip,
+                tooltip: 'PiP',
+              ),
+              const SizedBox(width: 16),
+              _buildTouchButton(
+                icon: Icons.cast,
+                onTap: _showCastDialogStandalone,
+                tooltip: 'Transmitir',
+              ),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTouchButton({required IconData icon, required VoidCallback onTap, required String tooltip}) {
+    return FocusableActionDetector(
+      focusNode: FocusNode(canRequestFocus: false), // NO D-PAD
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(50),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white30, width: 1),
+          ),
+          child: Icon(icon, color: Colors.white, size: 24),
+        ),
       ),
     );
   }

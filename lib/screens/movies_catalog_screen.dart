@@ -7,6 +7,10 @@ import '../models/movie.dart';
 import '../providers/movies_provider.dart';
 import '../utils/theme.dart';
 import '../widgets/series_modal.dart';
+import '../widgets/options_modal.dart';
+import '../services/casting_service.dart';
+import '../providers/favorites_provider.dart';
+import '../providers/movie_favorites_provider.dart';
 
 /// Tela principal do catálogo de filmes e séries
 /// Otimizada com lazy loading, cache de imagens e virtualização
@@ -63,6 +67,10 @@ class _MoviesCatalogScreenState extends State<MoviesCatalogScreen>
   static const double _cardHeight = 140.0;
   static const double _sectionHeight = 190.0;
   static const double _categoryChipHeight = 32.0;
+
+  // Long press detection
+  Timer? _longPressTimer;
+  bool _isLongPress = false;
 
   @override
   void initState() {
@@ -226,6 +234,33 @@ class _MoviesCatalogScreenState extends State<MoviesCatalogScreen>
       }
       // Deixa o TextField processar outras teclas
       return;
+    }
+
+    // Handle Long Press for Select/Enter
+    if (key == LogicalKeyboardKey.select ||
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.gameButtonA ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      
+      if (event is KeyDownEvent) {
+         if (_longPressTimer == null || !_longPressTimer!.isActive) {
+           _isLongPress = false;
+           _longPressTimer = Timer(const Duration(milliseconds: 600), () {
+             _isLongPress = true;
+             HapticFeedback.heavyImpact();
+             _handleLongPress();
+           });
+         }
+         return; // Wait for Up or Timer
+      } else if (event is KeyUpEvent) {
+         _longPressTimer?.cancel();
+         if (!_isLongPress) {
+           // Normal click
+           _handleNormalSelect();
+         }
+         _isLongPress = false;
+         return;
+      }
     }
 
     // Voltar
@@ -714,6 +749,185 @@ class _MoviesCatalogScreenState extends State<MoviesCatalogScreen>
       '/movie-player',
       arguments: movie,
     );
+  }
+
+  @override
+  void _handleNormalSelect() {
+    switch (_currentSection) {
+      case 0:
+        _executeHeaderAction();
+        break;
+      case 1:
+        if (_filterIndex == MovieFilterType.values.length) {
+          _toggleSearch();
+        } else {
+          final provider = context.read<MoviesProvider>();
+          provider.setFilterType(MovieFilterType.values[_filterIndex]);
+          setState(() {
+            _categoryIndex = 0;
+          });
+          provider.selectCategory('Todos');
+        }
+        break;
+      case 2:
+        setState(() {
+          _currentSection = 3;
+          _contentRowIndex = 0;
+          _contentColIndex = 0;
+          _sectionIndex = 0;
+          _itemIndex = 0;
+        });
+        break;
+      case 3:
+        final provider = context.read<MoviesProvider>();
+        if (provider.selectedCategory == 'Todos' && provider.searchQuery.isEmpty) {
+           final categoriesWithCount = provider.categoriesWithCount;
+           final categories = categoriesWithCount.keys.toList();
+           if (categories.isNotEmpty) {
+             final currentCategory = categories[_sectionIndex.clamp(0, categories.length - 1)];
+             final items = _getItemsForCategory(provider, currentCategory);
+             _selectSectionItem(items);
+           }
+        } else {
+           // Se tem busca ativa, usa os itens da busca
+           final List<dynamic> items;
+           if (provider.searchQuery.isNotEmpty) {
+             final movies = provider.filteredMovies;
+             final series = provider.filteredGroupedSeries;
+             items = [...series, ...movies];
+           } else {
+             items = _getDisplayItems(provider);
+           }
+           _selectItem(items);
+        }
+        break;
+    }
+  }
+
+  void _handleLongPress() {
+    if (_currentSection == 3) {
+        final provider = context.read<MoviesProvider>();
+        final List<dynamic> items;
+        int index = 0;
+
+        if (provider.selectedCategory == 'Todos' && provider.searchQuery.isEmpty) {
+           final categoriesWithCount = provider.categoriesWithCount;
+           final categories = categoriesWithCount.keys.toList();
+           if (categories.isEmpty) return;
+           final currentCategory = categories[_sectionIndex.clamp(0, categories.length - 1)];
+           items = _getItemsForCategory(provider, currentCategory);
+           index = _itemIndex;
+        } else {
+           if (provider.searchQuery.isNotEmpty) {
+             final movies = provider.filteredMovies;
+             final series = provider.filteredGroupedSeries;
+             items = [...series, ...movies];
+           } else {
+             items = _getDisplayItems(provider);
+           }
+           final itemsPerRow = _getItemsPerRow();
+           index = (_contentRowIndex * itemsPerRow) + _contentColIndex;
+        }
+
+        if (index >= 0 && index < items.length) {
+           final item = items[index];
+           _showMovieOptions(item);
+        }
+    }
+  }
+
+  void _showMovieOptions(dynamic item) {
+    if (item is GroupedSeries || item is Movie) {
+      final isSeries = item is GroupedSeries;
+      final movie = isSeries ? null : (item as Movie);
+      final series = isSeries ? (item as GroupedSeries) : null;
+      
+      final title = isSeries ? series!.name : movie!.name;
+      
+      final favProvider = context.read<MovieFavoritesProvider>();
+      final id = isSeries ? series!.name : movie!.id; 
+      
+      bool isFav = false;
+      try {
+         isFav = favProvider.isFavorite(id);
+      } catch (e) {
+         // Fallback
+      }
+
+      showDialog(
+        context: context,
+        builder: (context) => OptionsModal(
+          title: title,
+          isFavorite: isFav,
+          onToggleFavorite: () {
+            if (isSeries) {
+               // Logic for series favorite
+               // If provider supports it: favProvider.toggleSeriesFavorite(series)
+               // For now, let's assume we toggle the first movie or generic ID
+               final firstSeason = series!.sortedSeasons.first;
+               final firstEpisode = series!.getSeasonEpisodes(firstSeason).first;
+               favProvider.toggleFavorite(firstEpisode); 
+            } else {
+               favProvider.toggleFavorite(movie!);
+            }
+            setState(() {});
+          },
+          onPlay: () {
+             Navigator.pop(context); // Close modal
+             if (isSeries) {
+                 showDialog(
+                  context: context,
+                  builder: (context) => SeriesModal(
+                    series: series!,
+                    onSelectEpisode: (episode) => _playMovie(episode),
+                  ),
+                );
+             } else {
+                _playMovie(movie!);
+             }
+          },
+          onCastSelected: (device) {
+             final castingService = CastingService();
+             try {
+                String castUrl = '';
+                String castTitle = title;
+                String castImage = '';
+                
+                if (isSeries) {
+                   // Cast first available episode for testing or allow open modal
+                   final firstSeason = series!.sortedSeasons.first;
+                   final firstEpisode = series!.getSeasonEpisodes(firstSeason).first;
+                   castUrl = firstEpisode.url;
+                   castImage = firstEpisode.posterUrl;
+                } else {
+                   castUrl = movie!.url;
+                   castImage = movie.posterUrl;
+                }
+
+                castingService.castMedia(
+                  device: device,
+                  url: castUrl,
+                  title: castTitle,
+                  imageUrl: castImage,
+                );
+                 ScaffoldMessenger.of(context).showSnackBar(
+                   SnackBar(
+                     content: Text('Transmitindo para ${device.name}...'),
+                     backgroundColor: SaimoTheme.primary,
+                   ),
+                 );
+             } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                 SnackBar(
+                   content: Text('Erro ao transmitir: $e'),
+                   backgroundColor: SaimoTheme.error,
+                 ),
+               );
+             }
+          },
+        ),
+      );
+    }
   }
 
   @override

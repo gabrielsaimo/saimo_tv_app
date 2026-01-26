@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/channel.dart';
 import '../utils/theme.dart';
@@ -58,11 +59,16 @@ class _ChannelCardState extends State<ChannelCard>
     _focusNode.addListener(_onFocusChange);
   }
 
+  // Timer para detectar long press no D-Pad
+  Timer? _longPressTimer;
+  bool _isLongPress = false;
+
   @override
   void dispose() {
     _focusNode.removeListener(_onFocusChange);
     _focusNode.dispose();
     _animController.dispose();
+    _longPressTimer?.cancel();
     super.dispose();
   }
 
@@ -75,19 +81,48 @@ class _ChannelCardState extends State<ChannelCard>
     }
   }
 
+  void _handleDpadPress(bool isDown) {
+    if (isDown) {
+      _isLongPress = false;
+      _longPressTimer?.cancel();
+      _longPressTimer = Timer(const Duration(milliseconds: 600), () {
+        _isLongPress = true;
+        if (widget.onLongPress != null) {
+          HapticFeedback.heavyImpact();
+          widget.onLongPress!();
+        }
+      });
+    } else {
+      _longPressTimer?.cancel();
+      if (!_isLongPress) {
+        // Only trigger normal press if it wasn't a long press
+        HapticFeedback.selectionClick();
+        widget.onPressed?.call();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Focus(
       focusNode: _focusNode,
       autofocus: widget.autofocus,
       onKeyEvent: (node, event) {
-        if (event is KeyDownEvent) {
-          if (event.logicalKey == LogicalKeyboardKey.select ||
-              event.logicalKey == LogicalKeyboardKey.enter ||
-              event.logicalKey == LogicalKeyboardKey.gameButtonA) {
-            HapticFeedback.selectionClick();
-            widget.onPressed?.call();
-            return KeyEventResult.handled;
+        final key = event.logicalKey;
+        if (key == LogicalKeyboardKey.select ||
+            key == LogicalKeyboardKey.enter ||
+            key == LogicalKeyboardKey.gameButtonA || 
+            key == LogicalKeyboardKey.numpadEnter) {
+          
+          if (event is KeyDownEvent) {
+             // Avoid repeating if system sends multiple down events for hold
+             if (_longPressTimer == null || !_longPressTimer!.isActive) {
+               _handleDpadPress(true);
+             }
+             return KeyEventResult.handled;
+          } else if (event is KeyUpEvent) {
+             _handleDpadPress(false);
+             return KeyEventResult.handled;
           }
         }
         return KeyEventResult.ignored;
@@ -158,6 +193,7 @@ class _ChannelCardState extends State<ChannelCard>
             child: CachedNetworkImage(
               imageUrl: widget.channel.logoUrl,
               fit: BoxFit.contain,
+              memCacheWidth: 300, // Optimization: Limit cache size
               placeholder: (context, url) => _buildPlaceholder(),
               errorWidget: (context, url, error) => _buildPlaceholder(),
             ),
