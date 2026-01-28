@@ -48,12 +48,15 @@ class _GuideScreenState extends State<GuideScreen> {
     final currentChannel = playerProvider.currentChannel;
     
     if (currentChannel != null) {
-      final index = channelsProvider.channels.indexWhere((c) => c.id == currentChannel.id);
+      final channels = channelsProvider.currentCategoryChannels;
+      final index = channels.indexWhere((c) => c.id == currentChannel.id);
       if (index >= 0) {
         _selectedChannelIndex = index;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _scrollToChannel(index);
         });
+      } else {
+         _selectedChannelIndex = 0; // Se não estiver na lista (ex: mudou de categoria), vai pro primeiro
       }
     }
   }
@@ -93,7 +96,7 @@ class _GuideScreenState extends State<GuideScreen> {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return;
 
     final channelsProvider = context.read<ChannelsProvider>();
-    final totalChannels = channelsProvider.channels.length;
+    final totalChannels = channelsProvider.currentCategoryChannels.length;
 
     switch (event.logicalKey) {
       case LogicalKeyboardKey.arrowUp:
@@ -172,10 +175,13 @@ class _GuideScreenState extends State<GuideScreen> {
 
   void _playSelectedChannel() {
     final channelsProvider = context.read<ChannelsProvider>();
-    final channel = channelsProvider.channels[_selectedChannelIndex];
-    
-    context.read<PlayerProvider>().setChannel(channel);
-    Navigator.of(context).pushReplacementNamed('/player');
+    final channels = channelsProvider.currentCategoryChannels;
+    if (_selectedChannelIndex >= 0 && _selectedChannelIndex < channels.length) {
+       final channel = channels[_selectedChannelIndex];
+       
+       context.read<PlayerProvider>().setChannel(channel);
+       Navigator.of(context).pushReplacementNamed('/player');
+    }
   }
 
   @override
@@ -416,7 +422,7 @@ class _GuideScreenState extends State<GuideScreen> {
   Widget _buildProgramGrid() {
     return Consumer3<ChannelsProvider, EpgProvider, PlayerProvider>(
       builder: (context, channelsProvider, epgProvider, playerProvider, child) {
-        final channels = channelsProvider.channels;
+        final channels = channelsProvider.currentCategoryChannels;
         final currentPlayingChannel = playerProvider.currentChannel;
 
         return ListView.builder(

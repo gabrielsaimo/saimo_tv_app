@@ -21,6 +21,9 @@ import '../services/volume_boost_service.dart';
 import 'package:floating/floating.dart';
 import '../services/casting_service.dart';
 import '../widgets/options_modal.dart';
+import '../widgets/custom_video_player.dart';
+import '../providers/settings_provider.dart';
+import '../services/stream_caption_service.dart';
 
 /// Tela do Player de Vídeo
 class PlayerScreen extends StatefulWidget {
@@ -31,10 +34,9 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
-  VideoPlayerController? _videoController;
+  VideoPlayerController? _activeController;
   Timer? _hideControlsTimer;
   Timer? _progressTimer;
-  Timer? _videoHealthTimer; // Timer para verificar saúde do vídeo e evitar tela preta
   Timer? _wakelockTimer; // Timer para heartbeat do wakelock
   final VolumeBoostService _volumeBoostService = VolumeBoostService();
   final KeyDebouncer _debouncer = KeyDebouncer();
@@ -81,15 +83,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _startHideControlsTimer();
     _setupEpgProgressListener();
     _initializeChannelIndex();
-    _startVideoHealthMonitor();
   }
   
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _enableWakelock();
-      if (_videoController != null && !_videoController!.value.isPlaying && _error == null) {
-         _videoController!.play();
+      if (_activeController != null && !_activeController!.value.isPlaying && _error == null) {
+         _activeController!.play();
       }
     }
   }
@@ -187,52 +188,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
   }
   
-  /// Monitora a saúde do vídeo para evitar tela preta
-  void _startVideoHealthMonitor() {
-    _videoHealthTimer?.cancel();
-    _videoHealthTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      _checkVideoHealth();
-    });
-  }
-  
-  /// Verifica se o vídeo está funcionando e tenta recuperar se necessário
-  void _checkVideoHealth() {
-    if (_videoController == null || !mounted) return;
-    
-    final value = _videoController!.value;
-    
-    // Se não está inicializado, não há muito o que fazer
-    if (!value.isInitialized) return;
-    
-    // Se está em buffering por muito tempo ou se a posição está travada
-    // tenta reiniciar o player
-    if (!value.isPlaying && !_isBuffering && _error == null) {
-      debugPrint('Video health check: vídeo parado, tentando reiniciar...');
-      _retryVideoPlayback();
-    }
-  }
-  
-  /// Tenta reiniciar a reprodução sem recarregar o canal
-  void _retryVideoPlayback() async {
-    if (_videoController == null) return;
-    
-    try {
-      // Tenta dar play novamente
-      await _videoController!.play();
-      _enableWakelock(); // Garante wakelock ao retomar
-      
-      // Se ainda não funcionar depois de 3 segundos, reinicia
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted && _videoController != null && !_videoController!.value.isPlaying) {
-          debugPrint('Video ainda parado, reiniciando canal...');
-          _initializePlayer();
-        }
-      });
-    } catch (e) {
-      debugPrint('Erro ao tentar reiniciar vídeo: $e');
-      _initializePlayer();
-    }
-  }
+  // Removido: _startVideoHealthMonitor, _checkPreemptiveSwap, _retryVideoPlayback 
+  // O usuário solicitou remover suporte a MPEGTS e seamless playback complexo.
   
   void _initializeChannelIndex() {
     final playerProvider = context.read<PlayerProvider>();
@@ -270,16 +227,16 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _disableWakelock();
     _volumeBoostService.disableBoost(); // Desativa boost ao sair
     EpgService().removeProgressListener(_onEpgProgress);
-    _videoController?.dispose();
+    _activeController?.dispose();
     _hideControlsTimer?.cancel();
     _progressTimer?.cancel();
-    _videoHealthTimer?.cancel();
     _wakelockTimer?.cancel();
     _channelInputTimer?.cancel();
     _channelListHideTimer?.cancel();
     _channelListController.dispose();
     _programsListController.dispose();
     _mainFocusNode.dispose();
+    StreamCaptionService().stopCaptioning();
     super.dispose();
   }
   
@@ -306,7 +263,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         // Usa GET com Range para detectar redirects (HEAD não funciona em alguns servidores IPTV)
         final request = http.Request('GET', Uri.parse(currentUrl))
           ..followRedirects = false
-          ..headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 10; Android TV) AppleWebKit/537.36 SaimoTV/1.0'
+          ..headers['User-Agent'] = 'VLC/3.0.18 LibVLC/3.0.18' // Alinhado com o player
           ..headers['Range'] = 'bytes=0-0';  // Solicita apenas 1 byte para economizar banda
         
         final response = await client.send(request).timeout(const Duration(seconds: 15));
@@ -359,8 +316,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     });
 
     try {
-      _videoController?.dispose();
-      _videoController = null;
+      _activeController?.dispose();
+      _activeController = null;
       
       // Validação da URL
       var url = channel.url.trim();
@@ -369,51 +326,61 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       }
       
       debugPrint('Iniciando player para: ${channel.name}');
-      debugPrint('URL original: $url');
       
-      // Resolve redirects para obter URL final (muitos servidores IPTV usam redirect)
-      // Apenas para URLs MP4/streams VOD, não para HLS/M3U8 (que já lidam com redirects)
-      if (!url.contains('.m3u8') && !url.contains('.m3u')) {
+      // Resolve redirects, exceto TS/MPEG
+      if (!url.contains('.m3u8') && !url.contains('.m3u') && !url.contains('.ts') && !url.contains('.mpeg')) {
         url = await _resolveRedirects(url);
-        debugPrint('URL final: $url');
       }
       
-      _videoController = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-        httpHeaders: const {
-          'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Android TV) AppleWebKit/537.36 SaimoTV/1.0',
-          'Connection': 'keep-alive',
-          'Accept': '*/*',
-        },
-        videoPlayerOptions: VideoPlayerOptions(
-          mixWithOthers: false,
-          allowBackgroundPlayback: false,
-        ),
-      );
+      _activeController = await _createVideoController(url);
 
-      await _videoController!.initialize().timeout(
+      await _activeController!.initialize().timeout(
         const Duration(seconds: 30),
         onTimeout: () => throw Exception('Tempo limite excedido ao conectar'),
       );
       
-      // Verifica se inicializou corretamente
-      if (!_videoController!.value.isInitialized) {
+      if (!_activeController!.value.isInitialized) {
         throw Exception('Falha na inicialização do vídeo');
       }
       
-      // IMPORTANTE: Definir volume ANTES de dar play para evitar glitches de áudio
       final effectiveVolume = _isMuted ? 0.0 : _volume.clamp(0.0, 1.0);
-      await _videoController!.setVolume(effectiveVolume);
+      await _activeController!.setVolume(effectiveVolume);
+      await _activeController!.play();
+
+      _activeController!.addListener(_onVideoUpdate);
       
-      await _videoController!.play();
-
-      _videoController!.addListener(_onVideoUpdate);
-
+      setCategory(); 
       // Carrega EPG do canal
       final epgProvider = context.read<EpgProvider>();
       epgProvider.loadChannelEPG(channel.id);
 
       setState(() => _isBuffering = false);
+      
+      if (mounted) {
+         final settings = context.read<SettingsProvider>();
+         if (settings.enableSubtitles) {
+            // Inicia serviço de auto-legenda via stream (FFmpeg -> Vosk)
+            // Passa a URL final resolvida (ou a original se não houve redirect)
+            StreamCaptionService().startCaptioning(url);
+
+            ScaffoldMessenger.of(context).clearSnackBars();
+            ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(
+                 content: Row(
+                   children: const [
+                     Icon(Icons.closed_caption, color: Colors.white),
+                     SizedBox(width: 8),
+                     Text('CC Ativado (Se disponível no canal)'),
+                   ],
+                 ),
+                 backgroundColor: Colors.black.withOpacity(0.8),
+                 behavior: SnackBarBehavior.floating,
+                 margin: const EdgeInsets.all(16),
+                 duration: const Duration(seconds: 4),
+               ),
+            );
+         }
+      }
       
     } catch (e) {
       setState(() {
@@ -422,11 +389,33 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       });
     }
   }
+  
+  void setCategory(){
+    
+  }
+
+  // Removido: _initializeBackgroundPlayer, _swapControllers
+
+  Future<VideoPlayerController> _createVideoController(String url) async {
+      return VideoPlayerController.networkUrl(
+        Uri.parse(url),
+        formatHint: url.endsWith('.ts') || url.endsWith('.mpeg') ? VideoFormat.other : null,
+        httpHeaders: const {
+          'User-Agent': 'VLC/3.0.18 LibVLC/3.0.18',
+          'Connection': 'keep-alive',
+          'Accept': '*/*',
+        },
+        videoPlayerOptions: VideoPlayerOptions(
+          mixWithOthers: false,
+          allowBackgroundPlayback: false,
+        ),
+      );
+  }
 
   void _onVideoUpdate() {
-    if (_videoController == null || !mounted) return;
+    if (_activeController == null || !mounted) return;
     
-    final value = _videoController!.value;
+    final value = _activeController!.value;
     
     // Verifica erros no player
     if (value.hasError && _error == null) {
@@ -438,8 +427,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
     
     final isBuffering = value.isBuffering;
+
+    // IMPORTANTE: Removida lógica de swap
     if (isBuffering != _isBuffering) {
-      setState(() => _isBuffering = isBuffering);
+      // Pequeno debounce para evitar "piscar" o loading em micro-travamentos
+      if (isBuffering) {
+         Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && _activeController != null && _activeController!.value.isBuffering) {
+               setState(() => _isBuffering = true);
+            }
+         });
+      } else {
+         setState(() => _isBuffering = false);
+      }
     }
   }
 
@@ -862,10 +862,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     
     // Define o volume base no player (máximo 1.0)
     final baseVolume = newVolume.clamp(0.0, 1.0);
-    _videoController?.setVolume(baseVolume);
+    _activeController?.setVolume(baseVolume);
     
     // Se o volume for maior que 100%, usa o LoudnessEnhancer nativo para boost
-    if (newVolume > 1.0 && _videoController != null) {
+    if (newVolume > 1.0 && _activeController != null) {
       // Obtém o audio session ID do player (se disponível)
       // Como o video_player não expõe diretamente, usamos o ID do sistema
       try {
@@ -883,7 +883,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     setState(() {
       _isMuted = !_isMuted;
     });
-    _videoController?.setVolume(_isMuted ? 0 : _volume.clamp(0.0, 1.0));
+    _activeController?.setVolume(_isMuted ? 0 : _volume.clamp(0.0, 1.0));
     
     // Também ajusta o boost
     if (_isMuted) {
@@ -894,12 +894,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   void _togglePlayPause() {
-    if (_videoController == null) return;
+    if (_activeController == null) return;
     
-    if (_videoController!.value.isPlaying) {
-      _videoController!.pause();
+    if (_activeController!.value.isPlaying) {
+      _activeController!.pause();
     } else {
-      _videoController!.play();
+      _activeController!.play();
     }
     setState(() {});
   }
@@ -911,7 +911,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   /// Navega de volta para a tela de canais de forma segura
   void _navigateBack() {
     // Para o vídeo antes de sair
-    _videoController?.pause();
+    _activeController?.pause();
     
     // Usa um pequeno delay para garantir que a navegação aconteça
     Future.microtask(() {
@@ -2288,14 +2288,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   Widget _buildVideoPlayer() {
-    if (_videoController == null || !_videoController!.value.isInitialized) {
+    if (_activeController == null || !_activeController!.value.isInitialized) {
       return Container(color: Colors.black);
     }
 
+    final settings = context.watch<SettingsProvider>();
+
     return Center(
       child: AspectRatio(
-        aspectRatio: _videoController!.value.aspectRatio,
-        child: VideoPlayer(_videoController!),
+        aspectRatio: _activeController!.value.aspectRatio,
+        child: CustomVideoPlayer(
+          controller: _activeController!,
+          showCaptions: settings.enableSubtitles,
+        ),
       ),
     );
   }

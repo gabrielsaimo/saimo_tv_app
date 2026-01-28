@@ -25,13 +25,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Lista de itens navegáveis
   final List<_SettingItem> _items = [
     _SettingItem(type: _ItemType.toggle, id: 'autoPlay', title: 'Reprodução Automática', subtitle: 'Iniciar reprodução ao selecionar um canal'),
+    _SettingItem(type: _ItemType.toggle, id: 'enableSubtitles', title: 'Legendas (Closed Caption)', subtitle: 'Exibir legendas quando disponíveis'),
     _SettingItem(type: _ItemType.dropdown, id: 'preferredQuality', title: 'Qualidade Preferida', subtitle: 'Selecione a qualidade do vídeo'),
     _SettingItem(type: _ItemType.slider, id: 'volume', title: 'Volume Padrão', subtitle: ''),
     _SettingItem(type: _ItemType.toggle, id: 'showEpg', title: 'Mostrar Programação (EPG)', subtitle: 'Exibir informações do programa atual'),
     _SettingItem(type: _ItemType.special, id: 'adultMode', title: 'Canais Adultos', subtitle: 'Conteúdo +18'),
     _SettingItem(type: _ItemType.action, id: 'clearFavorites', title: 'Limpar Favoritos', subtitle: 'Remover todos os canais favoritos'),
     _SettingItem(type: _ItemType.action, id: 'resetSettings', title: 'Resetar Configurações', subtitle: 'Restaurar configurações padrão'),
-    _SettingItem(type: _ItemType.info, id: 'version', title: 'Versão', subtitle: '1.0.0'),
+    _SettingItem(type: _ItemType.info, id: 'version', title: 'Versão', subtitle: '11.0.0'),
     _SettingItem(type: _ItemType.action, id: 'back', title: 'Voltar', subtitle: 'Retornar à tela anterior'),
   ];
 
@@ -140,6 +141,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     switch (item.id) {
       case 'autoPlay':
         settings.setAutoPlay(!settings.autoPlay);
+        break;
+        
+      case 'enableSubtitles':
+        settings.setEnableSubtitles(!settings.enableSubtitles);
         break;
         
       case 'showEpg':
@@ -727,6 +732,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         break;
       case 'showEpg':
         value = settings.showEpg;
+        break;
+      case 'enableSubtitles':
+        value = settings.enableSubtitles;
         break;
     }
     

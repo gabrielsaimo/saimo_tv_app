@@ -27,8 +27,8 @@ void main() async {
 
   // === OTIMIZAÇÃO DE MEMÓRIA PARA FIRE TV LITE ===
   // Limita o cache de imagens para evitar vazamento de memória
-  PaintingBinding.instance.imageCache.maximumSize = 50; // Máximo 50 imagens em cache
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 50 << 20; // 50MB máximo
+  PaintingBinding.instance.imageCache.maximumSize = 100; // Aumentado para 100 para suavizar scroll
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024; // 50MB máximo
 
   // Inicializa serviço EPG em background
   EpgService().initialize();

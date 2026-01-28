@@ -74,28 +74,32 @@ class ChannelsProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Verifica se modo adulto está desbloqueado
       final storage = StorageService();
+      
+      // Verifica se modo adulto está desbloqueado
       _showAdultChannels = await storage.isAdultModeUnlocked();
+      
+      // Carrega modo (lite/pro) - AGORA IGNORADO (Forçado Lite)
+      // _channelMode = await storage.getChannelMode();
 
-      // Tenta carregar do GitHub
+      final service = ChannelsService();
+      
+      // Modo LITE: carrega do GitHub (original)
       try {
-        final service = ChannelsService();
         final remoteChannels = await service.fetchChannels();
-        
         // Mescla com overrides locais
         _channels = ChannelsData.mergeChannels(remoteChannels, includeAdult: _showAdultChannels);
-        
-        // Atualiza mapa de categorias
-        _channelsByCategory = {};
-        for (final channel in _channels) {
-          _channelsByCategory.putIfAbsent(channel.category, () => []).add(channel);
-        }
       } catch (e) {
         print('Erro ao carregar canais remotos: $e');
         // Fallback para dados locais estáticos
         _channels = ChannelsData.getAllChannels(includeAdult: _showAdultChannels);
         _channelsByCategory = ChannelsData.getChannelsByCategory(includeAdult: _showAdultChannels);
+      }
+        
+      // Atualiza mapa de categorias (comum para ambos os modos)
+      _channelsByCategory = {};
+      for (final channel in _channels) {
+        _channelsByCategory.putIfAbsent(channel.category, () => []).add(channel);
       }
 
       _error = null;
@@ -185,5 +189,29 @@ class ChannelsProvider with ChangeNotifier {
     
     // Recarrega canais
     await loadChannels();
+  }
+
+  // ===== Modo Lite/Pro =====
+  
+  // ===== Modo Lite/Pro =====
+  
+  // Forçando LITE permanentemente conforme solicitado
+  final String _channelMode = 'lite';
+  bool get isProMode => false;
+  
+  // Método removido - agora é sempre Lite
+  Future<void> toggleChannelMode() async {
+    // No-op
+  }
+
+  // ===== Persistência de Scroll =====
+  
+  int _lastSelectedIndex = 0;
+  int get lastSelectedIndex => _lastSelectedIndex;
+  
+  void setLastSelectedIndex(int index) {
+    _lastSelectedIndex = index;
+    // Não notificamos listeners aqui para evitar rebuilds desnecessários de toda a tela
+    // A tela apenas lê isso ao inicializar ou retornar
   }
 }

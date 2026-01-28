@@ -109,6 +109,20 @@ class StorageService {
     'enableSubtitles': false,
   };
 
+  // ===== Modo de Canais (Lite/Pro) =====
+
+  static const String _channelModeKey = 'saimo_tv_channel_mode';
+
+  Future<String> getChannelMode() async {
+    final prefs = await _getPrefs();
+    return prefs.getString(_channelModeKey) ?? 'lite';
+  }
+
+  Future<void> setChannelMode(String mode) async {
+    final prefs = await _getPrefs();
+    await prefs.setString(_channelModeKey, mode);
+  }
+
   // ===== Modo Adulto =====
 
   static const String _adultModeKey = 'saimo_tv_adult_mode';

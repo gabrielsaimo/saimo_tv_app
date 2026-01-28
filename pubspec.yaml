@@ -1,7 +1,7 @@
 name: saimo_tv
 description: "SAIMO TV - App de IPTV para Android TV"
 publish_to: 'none'
-version: 10.4.0+104
+version: 11.0.0+110
 
 environment:
   sdk: ^3.5.0
@@ -63,8 +63,11 @@ dependencies:
       ref: master
   dlna_dart: ^0.1.0
   xml: ^6.3.0
+  vosk_flutter: ^0.3.48
+  archive: ^3.3.7
 
 dependency_overrides:
+  permission_handler: ^12.0.1
   http: ^1.6.0
   cli_util: ^0.4.2
 
@@ -88,4 +91,5 @@ flutter:
     - assets/icons/
     - assets/images/
     - json/categories.json
+    - assets/pro_list.m3u
     # Dados de filmes/séries são carregados remotamente do GitHub

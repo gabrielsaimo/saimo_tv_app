@@ -38,6 +38,7 @@ class _ChannelsScreenState extends State<ChannelsScreen>
   final FocusNode _searchFocusNode = FocusNode(debugLabel: 'search_button');
   final FocusNode _settingsFocusNode = FocusNode(debugLabel: 'settings_button');
   final FocusNode _guiaFocusNode = FocusNode(debugLabel: 'guia_button');
+  final FocusNode _switchFocusNode = FocusNode(debugLabel: 'mode_switch');
   final FocusScopeNode _gridFocusScopeNode = FocusScopeNode(debugLabel: 'grid_scope');
   final ScrollController _channelsScrollController = ScrollController();
   final ScrollController _categoriesScrollController = ScrollController();
@@ -113,23 +114,31 @@ class _ChannelsScreenState extends State<ChannelsScreen>
     setState(() {
       _focusOnSidebar = false;
       _focusOnHeader = false;
-      _selectedChannelIndex = 0;
+      
+      // Recupera último índice selecionado
+      final channelsProvider = context.read<ChannelsProvider>();
+      _selectedChannelIndex = channelsProvider.lastSelectedIndex;
     });
+    
     // Usa o FocusScopeNode para pedir foco no primeiro filho
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _gridFocusScopeNode.requestFocus();
-        // Garante que o primeiro canal receba foco
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            final firstFocus = _gridFocusScopeNode.traversalDescendants.firstOrNull;
-            if (firstFocus != null && firstFocus.canRequestFocus) {
-              firstFocus.requestFocus();
-            }
-          }
-        });
+        // Garante que o canal correto receba foco
+        // Vamos apenas rolar para o item para garantir visibilidade
+        final columns = _getColumnCount(context);
+        _scrollToChannel(_selectedChannelIndex, columns);
+        
+        // Preload EPG
+        _preloadEpg();
       }
     });
+  }
+  
+  void _preloadEpg() {
+    final channelsProvider = context.read<ChannelsProvider>();
+    final epgProvider = context.read<EpgProvider>();
+    epgProvider.preloadFuzzyMatches(channelsProvider.channels);
   }
 
   @override
@@ -139,6 +148,7 @@ class _ChannelsScreenState extends State<ChannelsScreen>
     _searchFocusNode.dispose();
     _settingsFocusNode.dispose();
     _guiaFocusNode.dispose();
+    _switchFocusNode.dispose();
     _gridFocusScopeNode.dispose();
     _channelsScrollController.dispose();
     _categoriesScrollController.dispose();
@@ -168,7 +178,16 @@ class _ChannelsScreenState extends State<ChannelsScreen>
   }
 
   void _onChannelSelected(Channel channel) {
+    // Salva o índice atual para persistência
     final playerProvider = context.read<PlayerProvider>();
+    final channelsProvider = context.read<ChannelsProvider>();
+    
+    // Encontra o index deste canal na lista atual para salvar
+    final currentIndex = channelsProvider.filteredChannels.indexOf(channel);
+    if (currentIndex >= 0) {
+      channelsProvider.setLastSelectedIndex(currentIndex);
+    }
+
     playerProvider.setChannel(channel);
     Navigator.of(context).pushNamed('/player');
   }
@@ -627,8 +646,11 @@ class _ChannelsScreenState extends State<ChannelsScreen>
           const SizedBox(width: 16),
           
           // Relógio compacto
-          _buildCompactClock(),
-          
+          // Switch Lite/Pro REMOVED (Lite only enforced)
+          /* 
+          Consumer<ChannelsProvider>(...) 
+          */
+
           const SizedBox(width: 10),
           
           // Botão de configurações
@@ -636,7 +658,7 @@ class _ChannelsScreenState extends State<ChannelsScreen>
             focusNode: _settingsFocusNode,
             icon: Icons.settings_rounded,
             label: 'Config',
-            index: 2,
+            index: 3,
             onTap: () => Navigator.pushNamed(context, '/settings'),
           ),
         ],
@@ -684,13 +706,15 @@ class _ChannelsScreenState extends State<ChannelsScreen>
               setState(() => _headerFocusIndex = index - 1);
               if (index == 1) _guiaFocusNode.requestFocus();
               if (index == 2) _searchFocusNode.requestFocus();
+              if (index == 3) _switchFocusNode.requestFocus();
             }
             return KeyEventResult.handled;
           case LogicalKeyboardKey.arrowRight:
-            if (index < 2) {
+            if (index < 3) {
               setState(() => _headerFocusIndex = index + 1);
-              if (index == 0) _searchFocusNode.requestFocus();
-              if (index == 1) _settingsFocusNode.requestFocus();
+              if (index == 0) _searchFocusNode.requestFocus(); // 0 -> 1
+              if (index == 1) _switchFocusNode.requestFocus(); // 1 -> 2
+              if (index == 2) _settingsFocusNode.requestFocus(); // 2 -> 3
             }
             return KeyEventResult.handled;
           case LogicalKeyboardKey.arrowDown:
@@ -1100,7 +1124,7 @@ class _ChannelsScreenState extends State<ChannelsScreen>
                           itemBuilder: (context, index) {
                             final channel = channels[index];
                             final isFavorite = favoritesProvider.isFavorite(channel.id);
-                            final currentProgram = epgProvider.getCurrentProgram(channel.id);
+                            final currentProgram = epgProvider.getProgramForChannel(channel);
 
                             return _buildChannelCard(
                               channel: channel,
@@ -1192,7 +1216,7 @@ class _ChannelsScreenState extends State<ChannelsScreen>
     final isTV = _isTV(context) || _isDpadMode;
 
     return Focus(
-      autofocus: index == 0,
+      autofocus: index == _selectedChannelIndex,
       onFocusChange: (hasFocus) {
         if (hasFocus) {
           if (!_isDpadMode) setState(() => _isDpadMode = true);

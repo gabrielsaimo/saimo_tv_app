@@ -16,6 +16,12 @@ import '../services/storage_service.dart';
 /// Enum para rastreamento de elemento focado no D-PAD
 enum _FocusElement { playPause, volume, seek, nextEpisode }
 
+enum PlayerStrategy {
+  sanitized, // 1. URL sanitizada + UA SaimoTV (Padrão)
+  pure,      // 2. Link puro + Sem headers (Cenário VOD simples)
+  vlc,       // 3. Link puro + UA VLC (Cenário bloqueio de bot)
+}
+
 /// Player de filmes e séries
 class MoviePlayerScreen extends StatefulWidget {
   final Movie? movie;
@@ -46,6 +52,11 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
   
   Movie? _currentMovie;
   Duration _savedPosition = Duration.zero;
+
+  // Estratégia de Retentativa
+  PlayerStrategy _currentStrategy = PlayerStrategy.sanitized;
+  int _retryCount = 0;
+  static const int _maxRetries = 3;
   
   // Controle do botão próximo episódio
   bool _showNextEpisodeButton = false;
@@ -242,6 +253,87 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
     });
   }
 
+  /// Configura o controller de acordo com a estratégia escolhida
+  Future<void> _setupControllerForStrategy(String rawUrl) async {
+      Uri uri;
+      Map<String, String> headers = {};
+      
+      debugPrint('Configurando estratégia: ${_currentStrategy.name}');
+
+      switch (_currentStrategy) {
+        case PlayerStrategy.sanitized:
+          // Estratégia 1: Sanitiza URL + User Agent SaimoTV
+          uri = Uri.parse(_sanitizeUrl(rawUrl));
+          headers = {'User-Agent': 'SaimoTV/1.0 (Android TV)'};
+          break;
+          
+        case PlayerStrategy.pure:
+          // Estratégia 2: URL crua + Sem headers (comportamento browser default)
+          uri = Uri.parse(rawUrl.trim());
+          headers = {};
+          break;
+          
+        case PlayerStrategy.vlc:
+          // Estratégia 3: URL crua + Headers VLC (simula comportamento VLC)
+          uri = Uri.parse(rawUrl.trim());
+          headers = {
+            'User-Agent': 'VLC/3.0.18 LibVLC/3.0.18',
+            'Connection': 'keep-alive',
+          };
+          break;
+      }
+      
+      _videoController = VideoPlayerController.networkUrl(
+        uri,
+        httpHeaders: headers,
+      );
+  }
+
+  void _retryWithNextStrategy(String? lastError) {
+      if (_retryCount < 2) {
+         setState(() {
+           _retryCount++;
+           // Cicla entre as estratégias: sanitized -> pure -> vlc
+           int nextIndex = (_currentStrategy.index + 1) % PlayerStrategy.values.length;
+           _currentStrategy = PlayerStrategy.values[nextIndex];
+           _error = null;
+           _isBuffering = true;
+         });
+         
+         debugPrint('Tentando próxima estratégia: ${_currentStrategy.name} (Tentativa ${_retryCount + 1})');
+         
+         // Pequeno delay e reinicia
+         Future.delayed(const Duration(seconds: 1), _initializePlayer);
+      } else {
+         // Falhou todas
+         setState(() {
+           _error = 'Falha definitiva após 3 tentativas.\nErro técnico: $lastError\nLink: ${_currentMovie?.url}';
+           _isBuffering = false;
+         });
+      }
+  }
+
+  /// Limpa e codifica a URL para evitar erros de parser
+  String _sanitizeUrl(String url) {
+    try {
+      var trimmed = url.trim();
+      // Remove caracteres de controle invisíveis que podem vir do M3U
+      trimmed = trimmed.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+      
+      // Se já for válida, usa
+      if (Uri.tryParse(trimmed)?.hasAbsolutePath == true) {
+         // Verifica se tem espaços não codificados
+         if (trimmed.contains(' ')) {
+            return Uri.encodeFull(trimmed);
+         }
+         return trimmed;
+      }
+      return Uri.encodeFull(trimmed);
+    } catch (e) {
+      return url.trim();
+    }
+  }
+
   /// Resolve redirects HTTP e retorna a URL final
   /// Usa GET com Range header pois alguns servidores IPTV não respondem redirects para HEAD
   Future<String> _resolveRedirects(String url) async {
@@ -255,7 +347,7 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
         // Usa GET com Range para detectar redirects (HEAD não funciona em alguns servidores IPTV)
         final request = http.Request('GET', Uri.parse(currentUrl))
           ..followRedirects = false
-          ..headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 10; Android TV) AppleWebKit/537.36 SaimoTV/1.0'
+          ..headers['User-Agent'] = 'VLC/3.0.18 LibVLC/3.0.18' // Alinhado com o player
           ..headers['Range'] = 'bytes=0-0';  // Solicita apenas 1 byte para economizar banda
         
         final response = await client.send(request).timeout(const Duration(seconds: 15));
@@ -315,37 +407,33 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
       debugPrint('Iniciando player para: ${_currentMovie!.name}');
       debugPrint('URL original: $url');
       
-      // Resolve redirects para obter URL final (muitos servidores IPTV usam redirect)
-      debugPrint('Resolvendo redirects...');
-      url = await _resolveRedirects(url);
-      debugPrint('URL final resolvida: $url');
-      debugPrint('========================================');
+      // URL final é a própria URL original (Video On Demand)
+      debugPrint('Usando link direto (VOD): $url');
+      // url = await _resolveRedirects(url); // Removido a pedido do usuário
       
       // Cria novo controller - tenta com e sem headers
       debugPrint('Criando VideoPlayerController para URL: $url');
       
-      // Primeiro tenta sem headers customizados (mais compatível)
-      _videoController = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-      );
+      // Configura controller baseado na estratégia atual
+      await _setupControllerForStrategy(url);
 
       // Adiciona listener para erros do player
       _videoController!.addListener(() {
         if (_videoController!.value.hasError) {
-          debugPrint('ERRO DO VIDEO PLAYER: ${_videoController!.value.errorDescription}');
+          final errorMsg = _videoController!.value.errorDescription;
+          debugPrint('ERRO DO VIDEO PLAYER [${_currentStrategy.name}]: $errorMsg');
+          
           if (mounted && _error == null) {
-            setState(() {
-              _error = 'Erro de reprodução: ${_videoController!.value.errorDescription}';
-              _isBuffering = false;
-            });
+            // Tenta próxima estratégia antes de falhar
+            _retryWithNextStrategy(errorMsg);
           }
         }
       });
 
-      debugPrint('Inicializando controller...');
+      debugPrint('Inicializando controller (${_currentStrategy.name})...');
       await _videoController!.initialize().timeout(
         const Duration(seconds: 45),
-        onTimeout: () => throw Exception('Tempo limite excedido ao conectar (45s)'),
+        onTimeout: () => throw Exception('Timeout na conexão (${_currentStrategy.name})'),
       );
       
       // Verifica se inicializou corretamente
@@ -382,7 +470,7 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
       debugPrint('Erro ao inicializar player: $e');
       if (mounted) {
         setState(() {
-          _error = 'Erro ao reproduzir: $e';
+          _error = 'Erro ao reproduzir: $e\nLink: ${_currentMovie?.url}';
           _isBuffering = false;
         });
       }
@@ -399,7 +487,7 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
     }
     
     if (value.hasError && _error == null) {
-      setState(() => _error = value.errorDescription ?? 'Erro de reprodução');
+      setState(() => _error = '${value.errorDescription ?? 'Erro de reprodução'}\nLink: ${_currentMovie?.url}');
     }
     
     // Verifica se deve mostrar botão de próximo episódio (série + sempre visível)
@@ -822,6 +910,26 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
                             fontSize: TVConstants.fontM,
                           ),
                         ),
+                        if (_retryCount > 0) ...[
+                           const SizedBox(height: 12),
+                           Container(
+                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                             decoration: BoxDecoration(
+                               color: Colors.red.withOpacity(0.2),
+                               border: Border.all(color: Colors.red.withOpacity(0.5)),
+                               borderRadius: BorderRadius.circular(4),
+                             ),
+                             child: Text(
+                               'Tentativa ${_retryCount + 1}/$_maxRetries\nModo: ${_currentStrategy.name.toUpperCase()}',
+                               textAlign: TextAlign.center,
+                               style: const TextStyle(
+                                 color: Colors.white,
+                                 fontSize: 10, 
+                                 fontWeight: FontWeight.bold
+                               ),
+                             ),
+                           ),
+                        ],
                       ],
                     ),
                   ),

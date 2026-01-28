@@ -82,9 +82,10 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   Future<void> _initData() async {
     final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
     await provider.initialize();
-    // Inicia com "Todos" selecionado
-    if (provider.selectedCategoryName != 'Todos') {
-      await provider.selectCategory('Todos');
+    // Inicia com a categoria já selecionada no provider (persistência)
+    if (provider.selectedCategoryName == 'Todos') {
+       // Se for primeira vez ou realmente Todos, ok.
+       // O importante é não forçar 'Todos' se o user já tinha selecionado outra coisa.
     }
     
     // Carrega tendências do TMDB em paralelo

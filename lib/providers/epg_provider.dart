@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/program.dart';
+import '../models/channel.dart';
 import '../services/epg_service.dart';
 import '../data/epg_mappings.dart';
 
@@ -47,17 +48,132 @@ class EpgProvider with ChangeNotifier {
   /// Obtém EPG de um canal
   ChannelEPG? getEPG(String channelId) => _epgData[channelId];
 
-  /// Obtém programa atual de um canal
+  /// Obtém programa atual de um canal (ID direto)
   CurrentProgram? getCurrentProgram(String channelId) {
     return _epgData[channelId]?.currentProgram;
   }
-
-  /// Verifica se canal suporta EPG
-  bool hasEpgSupport(String channelId) {
-    return EpgMappings.hasEpg(channelId);
+  
+  /// Obtém programa atual usando objeto Channel (com suporte a fuzzy match)
+  CurrentProgram? getProgramForChannel(Channel channel) {
+    // Tenta direto
+    final direct = _epgData[channel.id]?.currentProgram;
+    if (direct != null) return direct;
+    
+    // Tenta mapeado
+    final mappedId = _findEpgId(channel);
+    if (mappedId != null) {
+        return _epgData[mappedId]?.currentProgram;
+    }
+    
+    return null;
   }
 
-  /// Carrega EPG de um canal
+  /// Cache de mapeamento de canais (ID do Canal -> ID do EPG)
+  final Map<String, String> _epgMapCache = {};
+
+  /// Verifica se canal suporta EPG (direto ou via fuzzy match)
+  bool hasEpgSupport(String channelId) {
+    if (EpgMappings.hasEpg(channelId)) return true;
+    return _epgMapCache.containsKey(channelId);
+  }
+  
+  /// Busca ID do EPG para um canal (usa cache ou fuzzy match)
+  String? _findEpgId(Channel channel) {
+    // 1. Verifica se já tem mapeamento direto
+    if (EpgMappings.hasEpg(channel.id)) return channel.id;
+    
+    // 2. Verifica cache
+    if (_epgMapCache.containsKey(channel.id)) return _epgMapCache[channel.id];
+    
+    // 3. Tenta Fuzzy Match
+    // Remover sufixos comuns: [4K], [FHD], HD, SD, (Legendado), etc.
+    String normalized = channel.name.toLowerCase();
+    
+    // Remove conteúdo entre colchetes/parenteses
+    normalized = normalized.replaceAll(RegExp(r'\[.*?\]'), '');
+    normalized = normalized.replaceAll(RegExp(r'\(.*?\)'), '');
+    
+    // Remove sufixos soltos
+    final suffixes = [' 4k', ' fhd', ' hd', ' sd', ' h265', ' uhd'];
+    for (final suffix in suffixes) {
+        if (normalized.endsWith(suffix)) {
+            normalized = normalized.substring(0, normalized.length - suffix.length);
+        }
+    }
+    
+    normalized = normalized.trim();
+    // Remove espaços e hifens para comparação "agressiva"
+    final cleanName = normalized.replaceAll(RegExp(r'[\s\-]'), '');
+    
+    // Itera sobre as chaves conhecidas do EpgMappings
+    for (final key in EpgMappings.allChannelsWithEpg) {
+        // Normaliza a chave (ex: 'telecine-action' -> 'telecineaction')
+        final cleanKey = key.replaceAll('-', '');
+        
+        if (cleanName == cleanKey) {
+            _epgMapCache[channel.id] = key;
+            return key;
+        }
+        
+        // Verifica se contém (para casos como "Rede Globo" vs "globo")
+        if (cleanName.contains(cleanKey) || cleanKey.contains(cleanName)) {
+             // Aceita se for muito parecido (comprimento pelo menos 4 e diferença pequena de tamanho)
+             if (cleanName.length > 3 && cleanKey.length > 3) {
+                 // Simple containment heuristic
+                 _epgMapCache[channel.id] = key;
+                 return key;
+             }
+        }
+    }
+    
+    return null;
+  }
+
+  /// Garante que o EPG do canal esteja carregado
+  Future<void> ensureEpgForChannel(Channel channel) async {
+    final epgId = _findEpgId(channel);
+    if (epgId != null) {
+        // Se mapeou para outro ID (ex: Pro -> Lite), carrega o Lite
+        if (epgId != channel.id) {
+             // print('[EPG Fuzzy] Mapeado ${channel.name} -> $epgId');
+        }
+        await loadChannelEPG(epgId);
+    }
+  }
+
+  /// Preload mappings for a list of channels (optimized for batch)
+  Future<void> preloadFuzzyMatches(List<Channel> channels) async {
+    final idsToLoad = <String>{};
+    
+    // Run mapping in microtask to not block immediate render
+    await Future.microtask(() {
+        for (final channel in channels) {
+            // Skip processing if we already have a direct mapping or cache hit
+            if (_epgMapCache.containsKey(channel.id)) {
+                 idsToLoad.add(_epgMapCache[channel.id]!);
+                 continue;
+            }
+            
+            // Only search if unknown
+            if (!EpgMappings.hasEpg(channel.id)) {
+                final mappedId = _findEpgId(channel);
+                if (mappedId != null) {
+                    idsToLoad.add(mappedId);
+                }
+            }
+        }
+    });
+
+    if (idsToLoad.isNotEmpty) {
+        print('[EPG] Preloading ${idsToLoad.length} fuzzy matched channels');
+        // Do not await to avoid blocking channel loading? 
+        // Better to await so we have EPG when valid.
+        // But loadMultipleEPG is async effectively.
+        loadMultipleEPG(idsToLoad.toList());
+    }
+  }
+
+  /// Carrega EPG de um canal (ID direto)
   Future<void> loadChannelEPG(String channelId) async {
     if (_loadingChannels[channelId] == true) return;
 

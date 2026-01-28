@@ -7,6 +7,7 @@ class Channel {
   final String category;
   final int channelNumber;
   final bool isAdult;
+  final bool isMpegTs;
 
   const Channel({
     required this.id,
@@ -16,6 +17,7 @@ class Channel {
     this.category = 'Outros',
     this.channelNumber = 0,
     this.isAdult = false,
+    this.isMpegTs = false,
   });
 
   factory Channel.fromJson(Map<String, dynamic> json) {
@@ -27,6 +29,7 @@ class Channel {
       category: json['category'] as String? ?? 'Outros',
       channelNumber: json['channelNumber'] as int? ?? 0,
       isAdult: json['isAdult'] as bool? ?? false,
+      isMpegTs: json['isMpegTs'] as bool? ?? false,
     );
   }
 
@@ -39,6 +42,7 @@ class Channel {
       'category': category,
       'channelNumber': channelNumber,
       'isAdult': isAdult,
+      'isMpegTs': isMpegTs,
     };
   }
 
@@ -94,6 +98,7 @@ class Channel {
     String? category,
     int? channelNumber,
     bool? isAdult,
+    bool? isMpegTs,
   }) {
     return Channel(
       id: id ?? this.id,
@@ -103,6 +108,7 @@ class Channel {
       category: category ?? this.category,
       channelNumber: channelNumber ?? this.channelNumber,
       isAdult: isAdult ?? this.isAdult,
+      isMpegTs: isMpegTs ?? this.isMpegTs,
     );
   }
 }
