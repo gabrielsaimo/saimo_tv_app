@@ -67,49 +67,7 @@ class ChannelsProvider with ChangeNotifier {
     }).toList();
   }
 
-  /// Carrega os canais
-  Future<void> loadChannels() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
 
-    try {
-      final storage = StorageService();
-      
-      // Verifica se modo adulto está desbloqueado
-      _showAdultChannels = await storage.isAdultModeUnlocked();
-      
-      // Carrega modo (lite/pro) - AGORA IGNORADO (Forçado Lite)
-      // _channelMode = await storage.getChannelMode();
-
-      final service = ChannelsService();
-      
-      // Modo LITE: carrega do GitHub (original)
-      try {
-        final remoteChannels = await service.fetchChannels();
-        // Mescla com overrides locais
-        _channels = ChannelsData.mergeChannels(remoteChannels, includeAdult: _showAdultChannels);
-      } catch (e) {
-        print('Erro ao carregar canais remotos: $e');
-        // Fallback para dados locais estáticos
-        _channels = ChannelsData.getAllChannels(includeAdult: _showAdultChannels);
-        _channelsByCategory = ChannelsData.getChannelsByCategory(includeAdult: _showAdultChannels);
-      }
-        
-      // Atualiza mapa de categorias (comum para ambos os modos)
-      _channelsByCategory = {};
-      for (final channel in _channels) {
-        _channelsByCategory.putIfAbsent(channel.category, () => []).add(channel);
-      }
-
-      _error = null;
-    } catch (e) {
-      _error = 'Erro ao carregar canais: $e';
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
 
   /// Seleciona uma categoria
   void selectCategory(String category) {
@@ -193,15 +151,89 @@ class ChannelsProvider with ChangeNotifier {
 
   // ===== Modo Lite/Pro =====
   
-  // ===== Modo Lite/Pro =====
+  bool _isProMode = false;
+  bool get isProMode => _isProMode;
   
-  // Forçando LITE permanentemente conforme solicitado
-  final String _channelMode = 'lite';
-  bool get isProMode => false;
+  List<Channel> _liteChannels = [];
+  List<Channel> _proChannels = [];
   
-  // Método removido - agora é sempre Lite
+  /// Alterna entre modo Lite e Pro
   Future<void> toggleChannelMode() async {
-    // No-op
+    _isProMode = !_isProMode;
+    
+    // Salva preferência (opcional, por enquanto em memória para sessão atual ou pro futuro)
+    // final storage = StorageService();
+    // await storage.setChannelMode(_isProMode ? 'pro' : 'lite');
+    
+    await loadChannels();
+  }
+
+  /// Carrega os canais
+  Future<void> loadChannels() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final storage = StorageService();
+      
+      // Verifica se modo adulto está desbloqueado
+      _showAdultChannels = await storage.isAdultModeUnlocked();
+      
+      final service = ChannelsService();
+      
+      if (_isProMode) {
+        // MODO PRO: Carrega lista M3U local (assets/pro_list.m3u)
+        if (_proChannels.isEmpty) {
+            _proChannels = await service.fetchProChannels();
+        }
+        
+        // Aplica filtro de adulto se necessário
+        if (!_showAdultChannels) {
+            _channels = _proChannels.where((c) => !c.isAdult).toList();
+        } else {
+            _channels = List.from(_proChannels);
+        }
+      } else {
+        // MODO LITE: Web + Overrides (Original)
+        if (_liteChannels.isEmpty) {
+            try {
+                final remoteChannels = await service.fetchChannels();
+                _liteChannels = ChannelsData.mergeChannels(remoteChannels, includeAdult: true); // Merge raw list
+            } catch (e) {
+                print('Erro ao carregar canais remotos: $e');
+                _liteChannels = ChannelsData.getAllChannels(includeAdult: true);
+            }
+        }
+        
+        // Aplica filtro de adulto e overrides locais
+        if (!_showAdultChannels) {
+            _channels = _liteChannels.where((c) => !c.isAdult).toList();
+        } else {
+            _channels = List.from(_liteChannels);
+        }
+      }
+        
+      // Atualiza mapa de categorias
+      _channelsByCategory = {};
+      for (final channel in _channels) {
+        _channelsByCategory.putIfAbsent(channel.category, () => []).add(channel);
+      }
+      
+      // Reseta categoria selecionada se ela não existir mais na nova lista
+      if (_selectedCategory != ChannelCategory.todos && 
+          _selectedCategory != ChannelCategory.favoritos &&
+          !_channelsByCategory.containsKey(_selectedCategory)) {
+        _selectedCategory = ChannelCategory.todos;
+      }
+
+      _error = null;
+    } catch (e) {
+      _error = 'Erro ao carregar canais: $e';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   // ===== Persistência de Scroll =====

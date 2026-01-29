@@ -645,13 +645,104 @@ class _ChannelsScreenState extends State<ChannelsScreen>
           
           const SizedBox(width: 16),
           
-          // Relógio compacto
-          // Switch Lite/Pro REMOVED (Lite only enforced)
-          /* 
-          Consumer<ChannelsProvider>(...) 
-          */
-
-          const SizedBox(width: 10),
+          // Switch Lite/Pro
+          Consumer<ChannelsProvider>(
+            builder: (context, provider, _) {
+              final isPro = provider.isProMode;
+              return Focus(
+                focusNode: _switchFocusNode,
+                onKeyEvent: (node, event) {
+                  if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+                  switch (event.logicalKey) {
+                    case LogicalKeyboardKey.arrowLeft:
+                      setState(() => _headerFocusIndex = 1);
+                      _searchFocusNode.requestFocus();
+                      return KeyEventResult.handled;
+                    case LogicalKeyboardKey.arrowRight:
+                      setState(() => _headerFocusIndex = 3);
+                      _settingsFocusNode.requestFocus();
+                      return KeyEventResult.handled;
+                    case LogicalKeyboardKey.arrowDown:
+                      setState(() => _focusOnHeader = false);
+                      _focusOnGrid();
+                      return KeyEventResult.handled;
+                    case LogicalKeyboardKey.enter:
+                    case LogicalKeyboardKey.select:
+                      provider.toggleChannelMode();
+                      return KeyEventResult.handled;
+                    default:
+                      return KeyEventResult.ignored;
+                  }
+                },
+                child: Builder(
+                  builder: (context) {
+                    final isFocused = Focus.of(context).hasFocus;
+                    return GestureDetector(
+                      onTap: () => provider.toggleChannelMode(),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isFocused ? SaimoTheme.primary.withOpacity(0.3) : Colors.black45,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isFocused ? SaimoTheme.primary : Colors.white24,
+                            width: 2,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              'LITE',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: !isPro ? FontWeight.w900 : FontWeight.normal,
+                                color: !isPro ? SaimoTheme.primary : Colors.white54,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                                width: 32,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(10),
+                                    color: isPro ? SaimoTheme.primary.withOpacity(0.5) : Colors.grey.withOpacity(0.3),
+                                ),
+                                child: Stack(
+                                    children: [
+                                        AnimatedAlign(
+                                            duration: const Duration(milliseconds: 200),
+                                            alignment: isPro ? Alignment.centerRight : Alignment.centerLeft,
+                                            child: Container(
+                                                margin: const EdgeInsets.all(2),
+                                                width: 12,
+                                                height: 12,
+                                                decoration: const BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    color: Colors.white,
+                                                ),
+                                            ),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'PRO',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: isPro ? FontWeight.w900 : FontWeight.normal,
+                                color: isPro ? SaimoTheme.primary : Colors.white54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                ),
+              );
+            },
+          ),
           
           // Botão de configurações
           _buildHeaderNavButton(

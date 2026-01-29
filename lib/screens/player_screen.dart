@@ -233,6 +233,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _wakelockTimer?.cancel();
     _channelInputTimer?.cancel();
     _channelListHideTimer?.cancel();
+
     _channelListController.dispose();
     _programsListController.dispose();
     _mainFocusNode.dispose();
@@ -345,7 +346,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       await _activeController!.play();
 
       _activeController!.addListener(_onVideoUpdate);
-      
       setCategory(); 
       // Carrega EPG do canal
       final epgProvider = context.read<EpgProvider>();
@@ -394,9 +394,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   // Removido: _initializeBackgroundPlayer, _swapControllers
 
   Future<VideoPlayerController> _createVideoController(String url) async {
+      final playerProvider = context.read<PlayerProvider>();
+      final isMpegTs = playerProvider.currentChannel?.isMpegTs ?? false;
+      
+      // MPEGTS/TS requires VideoFormat.other for ExoPlayer/video_player to handle it correctly
+      // This is crucial for Pro channels
+      final formatHint = (isMpegTs || url.endsWith('.ts') || url.endsWith('.mpeg') || url.contains('.ts'))
+          ? VideoFormat.other
+          : null;
+
       return VideoPlayerController.networkUrl(
         Uri.parse(url),
-        formatHint: url.endsWith('.ts') || url.endsWith('.mpeg') ? VideoFormat.other : null,
+        formatHint: formatHint,
         httpHeaders: const {
           'User-Agent': 'VLC/3.0.18 LibVLC/3.0.18',
           'Connection': 'keep-alive',
@@ -425,9 +434,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     
     final isBuffering = value.isBuffering;
 
-    // IMPORTANTE: Removida lógica de swap
     if (isBuffering != _isBuffering) {
-      // Pequeno debounce para evitar "piscar" o loading em micro-travamentos
       if (isBuffering) {
          Future.delayed(const Duration(milliseconds: 500), () {
             if (mounted && _activeController != null && _activeController!.value.isBuffering) {
