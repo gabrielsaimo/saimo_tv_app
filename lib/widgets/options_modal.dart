@@ -12,6 +12,7 @@ class OptionsModal extends StatefulWidget {
   final VoidCallback onToggleFavorite;
   final Function(CastDevice) onCastSelected;
   final VoidCallback? onPlay;
+  final VoidCallback? onOpenGuide;
 
   const OptionsModal({
     super.key,
@@ -20,6 +21,7 @@ class OptionsModal extends StatefulWidget {
     required this.onToggleFavorite,
     required this.onCastSelected,
     this.onPlay,
+    this.onOpenGuide,
   });
 
   @override
@@ -110,22 +112,28 @@ class _OptionsModalState extends State<OptionsModal> with SingleTickerProviderSt
 
   void _handleMenuKey(LogicalKeyboardKey key) {
     final hasPlay = widget.onPlay != null;
-    final maxIndex = 2; 
+    final hasGuide = widget.onOpenGuide != null;
+    final maxIndex = 4; // 0:Play, 1:Fav, 2:Guide, 3:Cast, 4:Cancel
 
     if (key == LogicalKeyboardKey.arrowDown) {
       setState(() {
-        if (_focusedIndex < maxIndex) _focusedIndex++;
-        if (!hasPlay && _focusedIndex == 0) _focusedIndex = 1;
+         if (_focusedIndex < maxIndex) _focusedIndex++;
+         // Pula play se não tiver
+         if (!hasPlay && _focusedIndex == 0) _focusedIndex = 1;
+         // Pula guide se não tiver (mas sempre terá no player)
+         if (!hasGuide && _focusedIndex == 2) _focusedIndex = 3;
       });
       HapticFeedback.selectionClick();
     } else if (key == LogicalKeyboardKey.arrowUp) {
       setState(() {
-         if (_focusedIndex > (hasPlay ? 0 : 1)) _focusedIndex--;
+         if (_focusedIndex > 0) _focusedIndex--;
+         if (!hasGuide && _focusedIndex == 2) _focusedIndex = 1;
+         if (!hasPlay && _focusedIndex == 0) _focusedIndex = 1; // Fav é o primeiro se não tem play
       });
       HapticFeedback.selectionClick();
     } else if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.gameButtonA || key == LogicalKeyboardKey.numpadEnter) {
       _selectOption();
-    } else if (key == LogicalKeyboardKey.arrowRight && _focusedIndex == 2 && _devices.isNotEmpty) {
+    } else if (key == LogicalKeyboardKey.arrowRight && _focusedIndex == 3 && _devices.isNotEmpty) {
       // Allow entering cast list with Right arrow too
       setState(() {
           _deviceListFocused = true;
@@ -176,7 +184,14 @@ class _OptionsModalState extends State<OptionsModal> with SingleTickerProviderSt
     } else if (_focusedIndex == 1) {
       widget.onToggleFavorite();
       setState(() {}); 
-    } else if (_focusedIndex == 2) {
+    } else if (_focusedIndex == 2 && widget.onOpenGuide != null) {
+      // Guia de TV
+      _closeModal();
+      Future.delayed(const Duration(milliseconds: 300), () {
+        widget.onOpenGuide!();
+      });
+    } else if (_focusedIndex == 3) {
+      // Cast
       if (_devices.isEmpty && !_searchingDevices) {
          CastingService().startDiscovery();
       }
@@ -186,6 +201,9 @@ class _OptionsModalState extends State<OptionsModal> with SingleTickerProviderSt
           _focusedDeviceIndex = 0;
         });
       }
+    } else if (_focusedIndex == 4) {
+      // Cancelar
+      _closeModal();
     }
   }
 
@@ -281,13 +299,21 @@ class _OptionsModalState extends State<OptionsModal> with SingleTickerProviderSt
                             index: 1,
                             icon: widget.isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
                             label: widget.isFavorite ? 'Remover dos Favoritos' : 'Adicionar aos Favoritos',
+
                             isActive: widget.isFavorite,
                           ),
+
+                          if (widget.onOpenGuide != null)
+                             _buildMenuItem(
+                               index: 2,
+                               icon: Icons.list_alt_rounded,
+                               label: 'Abrir Guia de TV',
+                             ),
 
                           const Divider(color: Colors.white10, height: 40),
 
                           _buildMenuItem(
-                            index: 2,
+                            index: 3,
                             icon: Icons.cast_connected_rounded,
                             label: 'Transmitir',
                             subtitle: _devices.isEmpty 
@@ -297,8 +323,16 @@ class _OptionsModalState extends State<OptionsModal> with SingleTickerProviderSt
                           ),
                           
                           // Expanded Cast List
-                          if ((_focusedIndex == 2 || _deviceListFocused) && _devices.isNotEmpty)
+                          if ((_focusedIndex == 3 || _deviceListFocused) && _devices.isNotEmpty)
                              _buildCastList(),
+
+                          const Divider(color: Colors.white10, height: 40),
+
+                          _buildMenuItem(
+                            index: 4,
+                            icon: Icons.close_rounded,
+                            label: 'Cancelar',
+                          ),
                         ],
                       ),
                     ),

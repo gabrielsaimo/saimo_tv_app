@@ -480,12 +480,36 @@ class _MoviesCatalogScreenState extends State<MoviesCatalogScreen>
 
   void _handleSectionNavigation(LogicalKeyboardKey key) {
     final provider = context.read<MoviesProvider>();
-    final categoriesWithCount = provider.categoriesWithCount;
-    final categories = categoriesWithCount.keys.toList();
+    final categories = provider.availableCategories.where((c) => c != 'Todos').toList();
     
     if (categories.isEmpty) return;
     
     final currentCategory = categories[_sectionIndex.clamp(0, categories.length - 1)];
+
+    // Se a categoria ainda não carregou, não temos itens para navegar nela
+    if (!provider.isCategoryLoaded(currentCategory)) {
+      // Pode tentar carregar
+      provider.loadCategory(currentCategory);
+      // Mas a navegação deve ser interrompida ou limitada
+      if (key == LogicalKeyboardKey.arrowUp && _sectionIndex > 0) {
+         setState(() {
+          _sectionIndex--;
+          _itemIndex = 0;
+        });
+        _scrollToSection(_sectionIndex);
+      } else if (key == LogicalKeyboardKey.arrowDown && _sectionIndex < categories.length - 1) {
+         setState(() {
+          _sectionIndex++;
+          _itemIndex = 0;
+        });
+        _scrollToSection(_sectionIndex);
+      } else if (key == LogicalKeyboardKey.arrowUp) {
+        // Sai para cima
+         setState(() => _currentSection = 2);
+      }
+      return;
+    }
+
     final items = _getItemsForCategory(provider, currentCategory);
     
     if (key == LogicalKeyboardKey.arrowLeft) {
@@ -811,10 +835,10 @@ class _MoviesCatalogScreenState extends State<MoviesCatalogScreen>
         int index = 0;
 
         if (provider.selectedCategory == 'Todos' && provider.searchQuery.isEmpty) {
-           final categoriesWithCount = provider.categoriesWithCount;
-           final categories = categoriesWithCount.keys.toList();
+           final categories = provider.availableCategories.where((c) => c != 'Todos').toList();
            if (categories.isEmpty) return;
            final currentCategory = categories[_sectionIndex.clamp(0, categories.length - 1)];
+           if (!provider.isCategoryLoaded(currentCategory)) return;
            items = _getItemsForCategory(provider, currentCategory);
            index = _itemIndex;
         } else {
@@ -1682,8 +1706,8 @@ class _MoviesCatalogScreenState extends State<MoviesCatalogScreen>
   }
 
   Widget _buildCategorySections(MoviesProvider provider) {
-    final categoriesWithCount = provider.categoriesWithCount;
-    final categories = categoriesWithCount.keys.toList();
+    // Usa availableCategories (exceto Todos) em vez de categoriesWithCount
+    final categories = provider.availableCategories.where((c) => c != 'Todos').toList();
     
     if (categories.isEmpty) {
       return _buildEmptyState();
@@ -1697,9 +1721,19 @@ class _MoviesCatalogScreenState extends State<MoviesCatalogScreen>
       itemExtent: _sectionHeight + 8, // altura + margin
       itemBuilder: (context, sectionIdx) {
         final category = categories[sectionIdx];
+        
+        // Lazy Load Check
+        if (!provider.isCategoryLoaded(category)) {
+          // Trigger load
+          provider.loadCategory(category);
+          // Show placeholder
+          return _buildLoadingSection(category);
+        }
+
         final items = _getItemsForCategory(provider, category);
         final isSectionFocused = _currentSection == 3 && _sectionIndex == sectionIdx;
         
+        // Mesmo carregado, pode estar vazio (filtro etc)
         if (items.isEmpty) return const SizedBox.shrink();
         
         return _buildCategorySection(
@@ -1707,9 +1741,76 @@ class _MoviesCatalogScreenState extends State<MoviesCatalogScreen>
           items: items,
           sectionIdx: sectionIdx,
           isSectionFocused: isSectionFocused,
-          count: categoriesWithCount[category] ?? 0,
+          count: items.length,
         );
       },
+    );
+  }
+
+  Widget _buildLoadingSection(String category) {
+    return SizedBox(
+      height: _sectionHeight + 8,
+      child: Container(
+        height: _sectionHeight,
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Placeholder
+            Row(
+              children: [
+                Container(
+                  width: 100,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  category,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.3),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+             const SizedBox(height: 10),
+             // Cards Placeholder
+             Expanded(
+               child: ListView.builder(
+                 scrollDirection: Axis.horizontal,
+                 physics: const NeverScrollableScrollPhysics(), // Placeholder estático
+                 itemCount: 6,
+                 itemBuilder: (context, index) {
+                   return Container(
+                     width: _cardWidth,
+                     height: _cardHeight,
+                     margin: const EdgeInsets.only(right: 10),
+                     decoration: BoxDecoration(
+                       color: Colors.white.withOpacity(0.05),
+                       borderRadius: BorderRadius.circular(8),
+                     ),
+                     child: Center(
+                       child: SizedBox(
+                         width: 16, 
+                         height: 16,
+                         child: CircularProgressIndicator(
+                           strokeWidth: 2, 
+                           valueColor: AlwaysStoppedAnimation<Color>(Colors.white.withOpacity(0.1)),
+                         )
+                       ),
+                     ),
+                   );
+                 },
+               ),
+             ),
+          ],
+        ),
+      ),
     );
   }
 

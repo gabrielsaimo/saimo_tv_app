@@ -143,9 +143,30 @@ class StorageService {
     return prefs.getInt(_adultClicksKey) ?? 0;
   }
 
+  static const String _keyEpgLastUpdate = 'epg_last_update';
+
+  Future<void> setEpgLastUpdate(int timestamp) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyEpgLastUpdate, timestamp);
+  }
+
   Future<void> setAdultClicks(int clicks) async {
     final prefs = await _getPrefs();
     await prefs.setInt(_adultClicksKey, clicks);
+  }
+
+  // Channel Mode (Lite/Pro)
+  static const String _keyChannelMode = 'channel_mode';
+
+  Future<bool> isProModeEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Default to false (Lite mode)
+    return prefs.getBool(_keyChannelMode) ?? false;
+  }
+
+  Future<void> setProModeEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyChannelMode, enabled);
   }
 
   // ===== Histórico =====

@@ -188,7 +188,10 @@ String _mapProCategory(String group, String name) {
     final lowerName = name.toLowerCase();
 
     // 1. Adulto
-    if (lowerGroup.contains('adulto') || lowerGroup.contains('xxx')) return ChannelCategory.adulto;
+    if (lowerGroup.contains('adulto') || lowerGroup.contains('xxx') || 
+        lowerName.contains('adulto') || lowerName.contains('xxx') || lowerName.contains('sexo') || lowerName.contains('18+')) {
+        return ChannelCategory.adulto;
+    }
 
     // 2. Legendados (Novo: Solicitado explicitamente)
     if (lowerGroup.contains('legendado') || lowerName.contains('[leg]') || lowerName.contains('(leg)')) {

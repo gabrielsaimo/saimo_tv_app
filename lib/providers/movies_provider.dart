@@ -73,38 +73,16 @@ class MoviesProvider with ChangeNotifier {
     'Programas de TV',
   ];
 
-  /// Lista de categorias disponíveis (filtradas por tipo selecionado)
+  /// Lista de categorias disponíveis (do índice do catálogo)
   List<String> get availableCategories {
-    // Pega todas as categorias do mapa
-    var categories = _moviesByCategory.keys.toList();
+    if (!_catalogService.isIndexLoaded) return ['Todos'];
     
-    // Filtra por tipo se necessário
-    if (_filterType != MovieFilterType.all) {
-      categories = categories.where((cat) {
-        final movies = _moviesByCategory[cat] ?? [];
-        if (_filterType == MovieFilterType.movies) {
-          return movies.any((m) => m.type == MovieType.movie);
-        } else if (_filterType == MovieFilterType.series) {
-          return movies.any((m) => m.type == MovieType.series);
-        }
-        return true;
-      }).toList();
-    }
+    var categories = _catalogService.categories.map((c) => c.name).toList();
     
-    // Ordena categorias: primeiro as conhecidas, depois alfabeticamente
-    categories.sort((a, b) {
-      final indexA = _categoryOrder.indexOf(a);
-      final indexB = _categoryOrder.indexOf(b);
-      
-      if (indexA != -1 && indexB != -1) {
-        return indexA.compareTo(indexB);
-      } else if (indexA != -1) {
-        return -1;
-      } else if (indexB != -1) {
-        return 1;
-      }
-      return a.compareTo(b);
-    });
+    // Filtro por tipo se necessário (baseado na info da categoria se possível, 
+    // mas por hora mantemos a lista completa e filtramos o conteúdo)
+    // Se quisermos filtrar categorias vazias, precisaríamos carregar tudo, o que não queremos.
+    // Então retornamos todas do índice.
     
     return ['Todos', ...categories];
   }
@@ -181,19 +159,51 @@ class MoviesProvider with ChangeNotifier {
   }
 
   /// Filmes filtrados pela busca (LIMITADO para performance)
+  /// Agora suporta busca global lazy-loaded via CatalogService se necessário
   List<Movie> get filteredMovies {
-    var movies = currentCategoryMovies;
-    
-    if (_searchQuery.isNotEmpty) {
-      final query = _searchQuery.toLowerCase();
-      movies = movies.where((movie) {
-        final searchable = '${movie.name} ${movie.seriesName ?? ''} ${movie.category}'.toLowerCase();
-        return searchable.contains(query);
-      }).toList();
+    // Se não tem busca, retorna da categoria atual
+    if (_searchQuery.isEmpty) {
+      return currentCategoryMovies;
     }
     
-    // Retorna TODOS - ListView.builder renderiza apenas os visíveis
-    return movies;
+    // Se tem busca, filtramos o que temos em memória (loaded)
+    // Nota: Para busca global REAL em todo catálogo (mesmo não carregado),
+    // precisaríamos usar uma chamada async e armazenar o resultado em uma lista separada de busca.
+    // Como filteredMovies é um getter, não pode ser async.
+    // Vamos filtrar o que temos carregado (_allMovies).
+    // Se o usuário quiser buscar tudo, idealmente usaríamos um método 'performSearch' que popula uma lista 'searchResults'.
+    // Para este fix rápido, vamos manter filtragem em memória mas sabendo que é parcial.
+    
+    final query = _searchQuery.toLowerCase();
+    return _allMovies.where((movie) {
+      final searchable = '${movie.name} ${movie.seriesName ?? ''} ${movie.category}'.toLowerCase();
+      return searchable.contains(query);
+    }).toList();
+  }
+
+  // Lista de resultados de busca global (async)
+  List<Movie> _globalSearchResults = [];
+  List<Movie> get globalSearchResults => _globalSearchResults;
+  bool _isSearchingGlobal = false;
+  bool get isSearchingGlobal => _isSearchingGlobal;
+
+  /// Executa busca global usando o serviço de catálogo
+  Future<void> performGlobalSearch(String query) async {
+    if (query.length < 3) return;
+    
+    _isSearchingGlobal = true;
+    notifyListeners();
+    
+    try {
+      final results = await _catalogService.search(query, includeAdult: _showAdultContent);
+      _globalSearchResults = results;
+    } catch (e) {
+      debugPrint('Erro busca global: $e');
+      _globalSearchResults = [];
+    } finally {
+      _isSearchingGlobal = false;
+      notifyListeners();
+    }
   }
 
   /// Séries agrupadas filtradas (LIMITADO para performance)
@@ -229,7 +239,7 @@ class MoviesProvider with ChangeNotifier {
     }
   }
 
-  /// Carrega todos os filmes e séries dos JSONs (lazy loading por categoria)
+  /// Carrega filmes e séries (apenas índice e categorias iniciais)
   Future<void> loadMovies() async {
     if (_isLoading) return;
     
@@ -238,70 +248,22 @@ class MoviesProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Verifica se modo adulto está desbloqueado
       final storage = StorageService();
       _showAdultContent = await storage.isAdultModeUnlocked();
 
-      // Carrega índice de categorias primeiro (leve)
-      final categories = await _catalogService.loadCategoriesIndex();
+      // 1. Carrega índice
+      await _catalogService.loadCategoriesIndex();
       
-      // Carrega todas as categorias dos JSONs
-      final allMovies = <Movie>[];
-      final byCategory = <String, List<Movie>>{};
-      final byGenre = <String, List<Movie>>{}; // Mapeamento por gênero
-      final groupedSeriesList = <GroupedSeries>[];
-      
-      for (final cat in categories) {
-        // Pula adultos se não habilitado
-        if (cat.isAdult && !_showAdultContent) continue;
-        
-        final result = await _catalogService.loadCategory(cat.file, includeAdult: _showAdultContent);
-        if (result == null) continue;
-        
-        // Combina filmes e séries
-        final categoryMovies = [...result.movies, ...result.series];
-        allMovies.addAll(categoryMovies);
-        byCategory[cat.name] = categoryMovies;
-        groupedSeriesList.addAll(result.groupedSeries);
-        
-        // Mapeia por gênero
-        for (final movie in categoryMovies) {
-          final genres = movie.tmdb?.genres ?? [];
-          for (final genre in genres) {
-            byGenre.putIfAbsent(genre, () => []).add(movie);
-          }
-        }
-      }
-      
-      _allMovies = allMovies;
-      _moviesByCategory = byCategory;
-      _moviesByGenre = byGenre;
-      _groupedSeries = groupedSeriesList;
-      
-      // Conta itens com cast para debug
-      final itemsWithCast = _allMovies.where((m) => m.tmdb?.cast != null && m.tmdb!.cast!.isNotEmpty).length;
-      
-      debugPrint('🎬 DEBUG loadMovies:');
-      debugPrint('   _allMovies.length=${_allMovies.length}');
-      debugPrint('   Itens com cast: $itemsWithCast');
-      debugPrint('   _moviesByCategory.keys=${_moviesByCategory.keys.toList()}');
-      debugPrint('   _groupedSeries.length=${_groupedSeries.length}');
-      if (_groupedSeries.isNotEmpty) {
-        final categories = _groupedSeries.map((s) => s.category).toSet().toList();
-        debugPrint('   Categorias em groupedSeries: $categories');
-      }
-      
-      // Inicializa contadores de paginação
-      _categoryLoadedCount = {};
-      for (final cat in _moviesByCategory.keys) {
-        _categoryLoadedCount[cat] = _pageSize;
+      // 2. Carrega APENAS a primeira categoria (Lançamentos) para ter algo na tela
+      // Isso evita o travamento inicial de carregar 50 JSONs
+      if (availableCategories.length > 1) {
+        final firstCategory = availableCategories[1]; // [0] é Todos
+        await loadCategory(firstCategory);
       }
       
       _error = null;
-      debugPrint('✅ Catálogo JSON carregado: ${_allMovies.length} itens em ${_moviesByCategory.length} categorias');
-      debugPrint('   📊 ${_moviesByGenre.length} gêneros mapeados');
     } catch (e) {
-      _error = 'Erro ao carregar filmes: $e';
+      _error = 'Erro ao carregar catálogo: $e';
       debugPrint(_error);
     } finally {
       _isLoading = false;
@@ -309,12 +271,77 @@ class MoviesProvider with ChangeNotifier {
     }
   }
 
-  /// Seleciona uma categoria
+  /// Carrega uma categoria específica sob demanda
+  Future<void> loadCategory(String categoryName) async {
+    // Se já carregou, ignora (exceto se for refresh forçado, mas isso seria outro metodo)
+    if (_moviesByCategory.containsKey(categoryName)) return;
+
+    final catInfo = _catalogService.getCategoryByName(categoryName);
+    if (catInfo == null) return;
+
+    // Se for adulto e não tiver permissão, ignora
+    if (catInfo.isAdult && !_showAdultContent) return;
+
+    try {
+      debugPrint('📥 MoviesProvider: Carregando $categoryName...');
+      final result = await _catalogService.loadCategory(catInfo.file);
+      
+      if (result != null) {
+        _addCategoryDataToMemory(categoryName, result);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar categoria $categoryName: $e');
+    }
+  }
+
+  /// Adiciona dados de uma categoria carregada às listas em memória
+  void _addCategoryDataToMemory(String categoryName, CategoryParseResult result) {
+    // Combina
+    final categoryMovies = [...result.movies, ...result.series];
+    
+    // Atualiza mapa de categorias
+    _moviesByCategory[categoryName] = categoryMovies;
+    
+    // Atualiza lista geral (cuidado com duplicatas se a mesma movie estiver em várias cats)
+    // Para simplificar e performance, vamos adicionar apenas se não tiver ID duplicado seria caro verificar tudo.
+    // Mas como Lazy Loading implica que _allMovies não é "ALL" e sim "ALL LOADED", ok.
+    _allMovies.addAll(categoryMovies); 
+    // Nota: Em um app real complexo, usaríamos um Map<Id, Movie> para _allMovies para evitar dups.
+    // Mas aqui vamos confiar que categorias são disjuntas ou aceitar dups por enquanto para não travar iterando tudo.
+
+    // Atualiza grouped series
+    _groupedSeries.addAll(result.groupedSeries);
+
+    // Mapeia por gênero (apenas dos novos itens)
+    for (final movie in categoryMovies) {
+      final genres = movie.tmdb?.genres ?? [];
+      for (final genre in genres) {
+        _moviesByGenre.putIfAbsent(genre, () => []).add(movie);
+      }
+    }
+    
+    // Inicializa contador de paginação
+    _categoryLoadedCount[categoryName] = _pageSize;
+  }
+
+
+  /// Seleciona uma categoria e carrega se necessário
   void selectCategory(String category) {
     if (_selectedCategory != category) {
       _selectedCategory = category;
       notifyListeners();
+      
+      if (category != 'Todos' && !_moviesByCategory.containsKey(category)) {
+        loadCategory(category);
+      }
     }
+  }
+
+  /// Verifica se uma categoria já foi carregada
+  bool isCategoryLoaded(String category) {
+    if (category == 'Todos') return true;
+    return _moviesByCategory.containsKey(category);
   }
 
   /// Define o filtro de tipo
@@ -333,6 +360,11 @@ class MoviesProvider with ChangeNotifier {
   /// Define a query de busca
   void setSearchQuery(String query) {
     _searchQuery = query;
+    if (query.length >= 3) {
+      performGlobalSearch(query);
+    } else {
+      _globalSearchResults = [];
+    }
     notifyListeners();
   }
 

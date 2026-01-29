@@ -7,6 +7,8 @@ import '../providers/lazy_movies_provider.dart';
 import '../utils/tv_constants.dart';
 import 'movie_detail_modal.dart';
 
+import '../services/storage_service.dart';
+
 /// Modal completo de detalhes de série com TODOS os dados TMDB
 /// Similar ao MovieDetailModal mas com seleção de temporadas/episódios
 class SeriesDetailModal extends StatefulWidget {
@@ -43,6 +45,9 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
   
   bool get _hasRecommendations => _filteredRecommendations.isNotEmpty;
   
+  // Double-back control (added)
+  DateTime? _lastBackPressTime;
+  
   List<int> get _availableSeasons => widget.series.sortedSeasons;
   
   List<Movie> get _currentSeasonEpisodes {
@@ -57,7 +62,44 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
     _loadFilteredRecommendations();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
+      _checkWatchHistory();
     });
+  }
+  
+  Movie? _continueEpisode;
+  
+  Future<void> _checkWatchHistory() async {
+    final storage = StorageService();
+    
+    // Verifica cada episódio de cada temporada
+    // Isso pode ser custoso, vamos otimizar: verificar apenas se há algum progresso salvo
+    // Melhor: StorageService poderia ter um método getSeriesProgress mas não tem.
+    // Vamos iterar pelas temporadas disponíveis.
+    
+    int latestTimestamp = 0;
+    Movie? lastWatched;
+    
+    // Estratégia simples: percorre todos episódios e vê qual tem progresso > 0 (ou timestamp mais recente se tivéssemos)
+    // Como StorageService só guarda progresso em segundos, pegamos o primeiro que encontrarmos ou o último da lista
+    // O ideal seria salvar "lastWatchedEpisode" para a série.
+    // Vamos verificar se há um episódio marcado como favorito ou com progresso significativo.
+    
+    // Iterar reversamente (últimas temporadas primeiro) para achar o mais recente provavelmente
+    for (final season in _availableSeasons.reversed) {
+      final episodes = widget.series.getSeasonEpisodes(season);
+      for (final ep in episodes.reversed) {
+         final progress = await storage.getMovieProgress(ep.id);
+         if (progress > 60) { // Mais de 1 minuto assistido
+             // Achamos um episódio iniciado.
+             if (mounted) {
+                 setState(() {
+                     _continueEpisode = ep;
+                 });
+             }
+             return; // Encontrou o mais recente (aproximadamente)
+         }
+      }
+    }
   }
   
   /// Filtra recomendações para mostrar apenas as que existem no catálogo
@@ -114,9 +156,8 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
         Navigator.of(context).pop();
         return KeyEventResult.handled;
       } else if (key == LogicalKeyboardKey.goBack || key == LogicalKeyboardKey.escape) {
-        HapticFeedback.lightImpact();
-        Navigator.of(context).pop();
-        return KeyEventResult.handled;
+         _handleDoubleBackToExit();
+         return KeyEventResult.handled;
       }
       return KeyEventResult.handled;
     }
@@ -142,12 +183,30 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
       _handleSelect();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.goBack || key == LogicalKeyboardKey.escape) {
-      HapticFeedback.lightImpact();
-      Navigator.of(context).pop();
-      return KeyEventResult.handled;
+       _handleDoubleBackToExit();
+       return KeyEventResult.handled;
     }
 
     return KeyEventResult.handled; // Sempre handled para não sair
+  }
+  
+  void _handleDoubleBackToExit() {
+      final now = DateTime.now();
+      if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+          _lastBackPressTime = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('Pressione voltar novamente para sair', textAlign: TextAlign.center),
+                  duration: Duration(seconds: 2),
+                  backgroundColor: Colors.black87,
+                  behavior: SnackBarBehavior.floating,
+              ),
+          );
+          return;
+      }
+      
+      HapticFeedback.lightImpact();
+      if (mounted) Navigator.of(context).pop();
   }
 
   void _navigateUp() {
@@ -312,10 +371,15 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
     switch (_currentSection) {
       case 0:
         if (_selectedButton == 0) {
-          final episodes = _currentSeasonEpisodes;
-          if (episodes.isNotEmpty) {
-            Navigator.of(context).pop();
-            Navigator.of(context).pushNamed('/movie-player', arguments: episodes.first);
+          if (_continueEpisode != null) {
+              Navigator.of(context).pop();
+              Navigator.of(context).pushNamed('/movie-player', arguments: _continueEpisode);
+          } else {
+              final episodes = _currentSeasonEpisodes;
+              if (episodes.isNotEmpty) {
+                Navigator.of(context).pop();
+                Navigator.of(context).pushNamed('/movie-player', arguments: episodes.first);
+              }
           }
         } else {
           Navigator.of(context).pop();
@@ -694,9 +758,11 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
     return Row(
       children: [
         Expanded(
-          child: _buildActionButton(
-            icon: Icons.play_arrow,
-            label: 'Assistir',
+            child: _buildActionButton(
+            icon: _continueEpisode != null ? Icons.play_circle_filled : Icons.play_arrow,
+            label: _continueEpisode != null 
+                ? 'Continuar T${_continueEpisode!.season} E${_continueEpisode!.episode}' 
+                : 'Assistir',
             isSelected: isFocused && _selectedButton == 0,
           ),
         ),

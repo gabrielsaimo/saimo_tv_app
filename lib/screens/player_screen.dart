@@ -38,6 +38,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   Timer? _hideControlsTimer;
   Timer? _progressTimer;
   Timer? _wakelockTimer; // Timer para heartbeat do wakelock
+  Timer? _channelChangeTimer; // Timer para debounce de troca de canal
   final VolumeBoostService _volumeBoostService = VolumeBoostService();
   final KeyDebouncer _debouncer = KeyDebouncer();
   bool _showControls = true;
@@ -72,6 +73,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   bool _isDraggingVolume = false;
   bool _isDraggingChannel = false;
   final Floating _floating = Floating();
+  
+  // Double-back controll
+  DateTime? _lastBackPressTime;
 
   @override
   void initState() {
@@ -124,6 +128,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         isFavorite: context.read<FavoritesProvider>().isFavorite(channel.id), 
         onToggleFavorite: () {
             context.read<FavoritesProvider>().toggleFavorite(channel.id);
+        },
+        onOpenGuide: () {
+            // Abre o guia (lista de canais)
+            _showChannelListOverlay();
         }, 
         onCastSelected: (device) {
            final castingService = CastingService();
@@ -197,7 +205,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final currentChannel = playerProvider.currentChannel;
     
     if (currentChannel != null) {
-      final index = channelsProvider.channels.indexWhere((c) => c.id == currentChannel.id);
+      final channels = channelsProvider.currentCategoryChannels;
+      final index = channels.indexWhere((c) => c.id == currentChannel.id);
       if (index >= 0) {
         _selectedChannelIndex = index;
       }
@@ -233,6 +242,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _wakelockTimer?.cancel();
     _channelInputTimer?.cancel();
     _channelListHideTimer?.cancel();
+    _channelChangeTimer?.cancel();
 
     _channelListController.dispose();
     _programsListController.dispose();
@@ -479,6 +489,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       if (_showChannelList) {
         _hideChannelList();
       } else {
+        final now = DateTime.now();
+        if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+            _lastBackPressTime = now;
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Pressione voltar novamente para sair do canal', textAlign: TextAlign.center),
+                    duration: Duration(seconds: 2),
+                    backgroundColor: Colors.black87,
+                    behavior: SnackBarBehavior.floating,
+                ),
+            );
+            return;
+        }
         _navigateBack();
       }
     }
@@ -488,7 +511,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final channelsProvider = context.read<ChannelsProvider>();
     final playerProvider = context.read<PlayerProvider>();
     final currentChannel = playerProvider.currentChannel;
-    final channels = channelsProvider.channels;
+    // Usa apenas canais da categoria atual para navegação
+    final channels = channelsProvider.currentCategoryChannels;
+    
+    // Tratamento especial para Menu (Fire TV)
+    if (key == LogicalKeyboardKey.contextMenu) {
+      _showCastDialogStandalone();
+      return;
+    }
 
     switch (key) {
       // OK/Select - Abre lista de canais ou confirma canal selecionado
@@ -722,8 +752,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     
     // Carrega EPG do canal selecionado
     final channelsProvider = context.read<ChannelsProvider>();
-    if (_selectedChannelIndex < channelsProvider.channels.length) {
-      _loadEpgForSelectedChannel(channelsProvider.channels[_selectedChannelIndex].id);
+    final channels = channelsProvider.currentCategoryChannels;
+    if (_selectedChannelIndex < channels.length) {
+      _loadEpgForSelectedChannel(channels[_selectedChannelIndex].id);
     }
   }
   
@@ -741,7 +772,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       if (mounted && _showChannelList) {
         // Muda para o canal selecionado automaticamente após 8 segundos
         final channelsProvider = context.read<ChannelsProvider>();
-        final channels = channelsProvider.channels;
+        final channels = channelsProvider.currentCategoryChannels;
         if (_selectedChannelIndex >= 0 && _selectedChannelIndex < channels.length) {
           final selectedChannel = channels[_selectedChannelIndex];
           final playerProvider = context.read<PlayerProvider>();
@@ -773,22 +804,24 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void _scrollToSelectedChannel() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_channelListController.hasClients && mounted) {
-        // Calcula altura do item baseado no viewport disponível
-        // Em TV geralmente cabe ~8 itens, precisamos garantir que o item fique visível
-        final viewportHeight = _channelListController.position.viewportDimension;
+        // Recalculate scale (same logic as in build method) to ensure correct offset
+        final screenHeight = MediaQuery.of(context).size.height;
+        final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+        final dpiAdjustment = devicePixelRatio >= 2.0 ? 0.65 : 1.0;
+        final baseScale = (screenHeight / 1080).clamp(0.8, 1.4);
+        final scale = baseScale * dpiAdjustment;
+
+        final viewportWidth = _channelListController.position.viewportDimension;
         final maxScroll = _channelListController.position.maxScrollExtent;
         
-        // Altura estimada do item (baseado no total de itens e scroll máximo)
-        final totalContentHeight = maxScroll + viewportHeight;
-        final channelsProvider = context.read<ChannelsProvider>();
-        final totalItems = channelsProvider.channels.length;
-        final estimatedItemHeight = totalItems > 0 ? totalContentHeight / totalItems : 56.0;
+        // Fixed width calculation matching _buildChannelsStrip
+        // Width: 120 * scale + Margin: 8 * scale
+        final itemTotalWidth = (120 * scale) + (8 * scale);
         
-        // Calcula o offset para centralizar o item selecionado
-        final itemOffset = _selectedChannelIndex * estimatedItemHeight;
-        final centeredOffset = itemOffset - (viewportHeight / 2) + (estimatedItemHeight / 2);
+        // Calculate exact center offset
+        final itemOffset = _selectedChannelIndex * itemTotalWidth;
+        final centeredOffset = itemOffset - (viewportWidth / 2) + (itemTotalWidth / 2);
         
-        // Garante que o offset está dentro dos limites
         final targetOffset = centeredOffset.clamp(0.0, maxScroll);
         
         _channelListController.animateTo(
@@ -836,22 +869,37 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     });
   }
 
-  void _changeChannel(Channel channel) {
+  Future<void> _changeChannel(Channel channel) async {
     if (!mounted) return;
     
+    // Cancela troca pendente
+    _channelChangeTimer?.cancel();
+
     // Atualiza estado local imediatamente para feedback instantâneo
     setState(() {
-      _selectedChannelIndex = context.read<ChannelsProvider>().channels.indexWhere((c) => c.id == channel.id);
+      final channelsProvider = context.read<ChannelsProvider>();
+      // Usa currentCategoryChannels se possível, ou channels geral
+      // Aqui usamos channels mesmo para achar o index absoluto se necessário, 
+      // mas para navegação visual é melhor manter sincronizado com o que a lista mostra
+      final allChannels = channelsProvider.channels;
+      final index = allChannels.indexWhere((c) => c.id == channel.id);
+      if (index >= 0) _selectedChannelIndex = index;
+      
       _isBuffering = true; // Mostra loading imediatamente
       _error = null;
+      _showControls = true;
     });
-    
-    // Atualiza provider e inicia player (Fire-and-forget para storage/history)
-    final playerProvider = context.read<PlayerProvider>();
-    playerProvider.setChannel(channel); // Não esperamos o await aqui para não travar a UI
-    
-    // Reinicia player imediatamente
-    _initializePlayer();
+
+    // Atualiza apenas estado visual imediato no provider
+    context.read<PlayerProvider>().setChannel(channel);
+
+    // Debounce: Aguarda 500ms antes de disparar o player pesado
+    // Isso evita travar a UI e criar múltiplos players ao navegar rápido
+    _channelChangeTimer = Timer(const Duration(milliseconds: 500), () async {
+       if (mounted) {
+         await _initializePlayer();
+       }
+    });
   }
 
   void _setVolume(double value) async {
@@ -1083,7 +1131,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   Widget _buildChannelListOverlay() {
     return Consumer3<ChannelsProvider, PlayerProvider, EpgProvider>(
       builder: (context, channelsProvider, playerProvider, epgProvider, child) {
-        final channels = channelsProvider.channels;
+        // Fix: Use ONLY channels from current category
+        final channels = channelsProvider.currentCategoryChannels;
         final currentChannel = playerProvider.currentChannel;
         final selectedChannel = _selectedChannelIndex < channels.length 
             ? channels[_selectedChannelIndex] 
@@ -1527,7 +1576,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
-              width: isSelected ? 140 * scale : 100 * scale,
+              width: 120 * scale,
               margin: EdgeInsets.symmetric(horizontal: 4 * scale),
               decoration: BoxDecoration(
                 color: isSelected 

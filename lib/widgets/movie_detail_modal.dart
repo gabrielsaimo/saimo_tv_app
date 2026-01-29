@@ -40,6 +40,9 @@ class _MovieDetailModalState extends State<MovieDetailModal> {
   bool _recommendationsLoaded = false;
   
   bool get _hasRecommendations => _filteredRecommendations.isNotEmpty;
+  
+  // Double-back controll
+  DateTime? _lastBackPressTime;
 
   @override
   void initState() {
@@ -114,6 +117,20 @@ class _MovieDetailModalState extends State<MovieDetailModal> {
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.goBack || key == LogicalKeyboardKey.escape) {
       if (_debouncer.shouldProcessBack()) {
+        final now = DateTime.now();
+        if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+            _lastBackPressTime = now;
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Pressione voltar novamente para sair', textAlign: TextAlign.center),
+                    duration: Duration(seconds: 2),
+                    backgroundColor: Colors.black87,
+                    behavior: SnackBarBehavior.floating,
+                ),
+            );
+            return KeyEventResult.handled;
+        }
+        
         HapticFeedback.lightImpact();
         Navigator.of(context).pop();
       }
@@ -1709,7 +1726,8 @@ class _ActorFilmographyModalState extends State<ActorFilmographyModal> {
       }
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.goBack || key == LogicalKeyboardKey.escape) {
-      Navigator.of(context).pop();
+      // Verifica se já não foi fechado
+      if (mounted) Navigator.of(context).pop();
       return KeyEventResult.handled;
     }
 

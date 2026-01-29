@@ -161,9 +161,9 @@ class ChannelsProvider with ChangeNotifier {
   Future<void> toggleChannelMode() async {
     _isProMode = !_isProMode;
     
-    // Salva preferência (opcional, por enquanto em memória para sessão atual ou pro futuro)
-    // final storage = StorageService();
-    // await storage.setChannelMode(_isProMode ? 'pro' : 'lite');
+    // Salva preferência
+    final storage = StorageService();
+    await storage.setProModeEnabled(_isProMode);
     
     await loadChannels();
   }
@@ -180,44 +180,66 @@ class ChannelsProvider with ChangeNotifier {
       // Verifica se modo adulto está desbloqueado
       _showAdultChannels = await storage.isAdultModeUnlocked();
       
+      // Carrega modo Pro salvo
+      if (!_isProMode) { 
+         _isProMode = await storage.isProModeEnabled();
+      }
+      
       final service = ChannelsService();
       
+      // 1. CARREGAMENTO (Mantendo lógica original de fetch)
       if (_isProMode) {
-        // MODO PRO: Carrega lista M3U local (assets/pro_list.m3u)
         if (_proChannels.isEmpty) {
             _proChannels = await service.fetchProChannels();
         }
-        
-        // Aplica filtro de adulto se necessário
-        if (!_showAdultChannels) {
-            _channels = _proChannels.where((c) => !c.isAdult).toList();
-        } else {
-            _channels = List.from(_proChannels);
-        }
+        // Clona para lista principal (SEM FILTRAR AINDA)
+        _channels = List.from(_proChannels);
       } else {
-        // MODO LITE: Web + Overrides (Original)
         if (_liteChannels.isEmpty) {
             try {
                 final remoteChannels = await service.fetchChannels();
-                _liteChannels = ChannelsData.mergeChannels(remoteChannels, includeAdult: true); // Merge raw list
+                _liteChannels = ChannelsData.mergeChannels(remoteChannels, includeAdult: true);
             } catch (e) {
                 print('Erro ao carregar canais remotos: $e');
                 _liteChannels = ChannelsData.getAllChannels(includeAdult: true);
             }
         }
-        
-        // Aplica filtro de adulto e overrides locais
-        if (!_showAdultChannels) {
-            _channels = _liteChannels.where((c) => !c.isAdult).toList();
-        } else {
-            _channels = List.from(_liteChannels);
-        }
+        // Clona para lista principal
+        _channels = List.from(_liteChannels);
       }
-        
-      // Atualiza mapa de categorias
+      
+      // 2. FILTRO DE SEGURANÇA (CRÍTICO)
+      // Remove canais adultos da lista PRINCIPAL se o modo estiver bloqueado
+      if (!_showAdultChannels) {
+          _channels = _channels.where((c) => !c.isAdult).toList();
+      }
+
+      // 3. CATEGORIZAÇÃO (Multi-Categoria)
+      // Um mesmo canal pode aparecer em "Esportes" e "FHD" ao mesmo tempo
       _channelsByCategory = {};
+      
       for (final channel in _channels) {
+        // A. Categoria Original
         _channelsByCategory.putIfAbsent(channel.category, () => []).add(channel);
+        
+        // B. Categorias Virtuais (Baseadas no nome)
+        final nameUpper = channel.name.toUpperCase();
+        
+        if (nameUpper.contains('4K') || nameUpper.contains('UHD')) {
+             _channelsByCategory.putIfAbsent('4K UHD', () => []).add(channel);
+        }
+        
+        if (nameUpper.contains('24H')) {
+             _channelsByCategory.putIfAbsent('24h', () => []).add(channel);
+        }
+        
+        if (nameUpper.contains('FHD')) {
+             _channelsByCategory.putIfAbsent('FHD', () => []).add(channel);
+        } else if (nameUpper.contains('HD')) {
+             _channelsByCategory.putIfAbsent('HD', () => []).add(channel);
+        } else if (nameUpper.contains('SD')) {
+             _channelsByCategory.putIfAbsent('SD', () => []).add(channel);
+        }
       }
       
       // Reseta categoria selecionada se ela não existir mais na nova lista
@@ -246,4 +268,6 @@ class ChannelsProvider with ChangeNotifier {
     // Não notificamos listeners aqui para evitar rebuilds desnecessários de toda a tela
     // A tela apenas lê isso ao inicializar ou retornar
   }
+
+
 }
