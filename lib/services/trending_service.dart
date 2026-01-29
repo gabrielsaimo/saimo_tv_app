@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/movie.dart';
 import 'json_lazy_service.dart';
+import 'storage_service.dart';
 
 /// Serviço para buscar tendências do TMDB
 /// Retorna apenas conteúdos que existem no catálogo local
@@ -11,27 +12,51 @@ class TrendingService {
   static const String _baseUrl = 'https://api.themoviedb.org/3';
   static const Duration _cacheDuration = Duration(minutes: 30);
   
-  // Cache
+  // Cache Memória
   static List<TrendingItem>? _todayCache;
-  static List<TrendingItem>? _weekCache;
   static DateTime? _todayCacheTime;
+  static List<TrendingItem>? _weekCache;
   static DateTime? _weekCacheTime;
+  
+  // Cache Keys
+  static const String _todayCacheKey = 'saimo_tv_trending_today';
+  static const String _weekCacheKey = 'saimo_tv_trending_week';
   
   /// Busca tendências de hoje filtradas pelo catálogo local
   static Future<List<TrendingItem>> getTrendingToday(JsonLazyService service) async {
-    // Verifica cache
+    // 1. Tenta memória
     if (_todayCache != null && _todayCacheTime != null) {
       if (DateTime.now().difference(_todayCacheTime!) < _cacheDuration) {
         return _todayCache!;
       }
     }
     
-    debugPrint('🔥 Buscando tendências de hoje no TMDB...');
+    final storage = StorageService();
+    
+    // 2. Tenta disco (se memória falhou/vazia)
+    if (_todayCache == null) {
+      final cachedJson = await storage.getString(_todayCacheKey);
+      if (cachedJson != null) {
+        try {
+          final List<dynamic> list = jsonDecode(cachedJson);
+          // O cache local não guarda o objeto Movie completo, então precisamos re-hidratar
+          // Mas como isso seria lento, melhor apenas guardar os IDs e buscar do serviço
+          // Por simplicidade e eficiência, vamos confiar na busca do TMDB + Filtro Local que já é rápida
+          // A otimização principal será carregar o TMDB em paralelo
+        } catch (e) {
+          debugPrint('Erro ao ler cache disco hoje: $e');
+        }
+      }
+    }
+    
+    debugPrint('🔥 Buscando tendências de hoje no TMDB (Paralelo)...');
     final items = await _fetchTrending('day');
     final filtered = await _filterByLocalCatalog(items, service);
     
     _todayCache = filtered;
     _todayCacheTime = DateTime.now();
+    
+    // Salva cache em disco (opcional, por enquanto mantemos apenas em memória para não complicar a serialização/deserialização do Movie)
     
     debugPrint('✅ Encontrados ${filtered.length} itens de tendências de hoje no catálogo');
     return filtered;
@@ -39,14 +64,14 @@ class TrendingService {
   
   /// Busca tendências da semana filtradas pelo catálogo local
   static Future<List<TrendingItem>> getTrendingWeek(JsonLazyService service) async {
-    // Verifica cache
+    // Verifica cache memória
     if (_weekCache != null && _weekCacheTime != null) {
       if (DateTime.now().difference(_weekCacheTime!) < _cacheDuration) {
         return _weekCache!;
       }
     }
     
-    debugPrint('📅 Buscando tendências da semana no TMDB...');
+    debugPrint('📅 Buscando tendências da semana no TMDB (Paralelo)...');
     final items = await _fetchTrending('week');
     final filtered = await _filterByLocalCatalog(items, service);
     
@@ -79,11 +104,16 @@ class TrendingService {
     final List<_TMDBTrendingResult> allResults = [];
     
     try {
-      // Busca 3 páginas para ter mais conteúdo
+      // Busca 3 páginas EM PARALELO para performance máxima
+      final futures = <Future<http.Response>>[];
       for (int page = 1; page <= 3; page++) {
         final url = '$_baseUrl/trending/all/$timeWindow?api_key=$_apiKey&language=pt-BR&page=$page';
-        final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
-        
+        futures.add(http.get(Uri.parse(url)).timeout(const Duration(seconds: 10)));
+      }
+      
+      final responses = await Future.wait(futures);
+      
+      for (final response in responses) {
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
           final results = (data['results'] as List?) ?? [];

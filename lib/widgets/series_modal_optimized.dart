@@ -6,6 +6,7 @@ import '../models/movie.dart';
 import '../utils/tv_constants.dart';
 import '../utils/key_debouncer.dart';
 import '../providers/movie_favorites_provider.dart';
+import '../services/storage_service.dart';
 import 'movie_detail_modal.dart' show ActorFilmographyModal;
 
 /// Modal de série otimizado para TV - Layout similar ao modal de filmes
@@ -31,6 +32,10 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
   int _selectedSeasonIndex = 0;
   int _selectedEpisodeIndex = 0;
   int _selectedCastIndex = 0;
+  
+  // Histórico
+  Map<String, dynamic>? _lastWatchedEpisode;
+  bool _isLoadingHistory = true;
   
   // TMDB data - direto do JSON
   TMDBData? get _tmdb => widget.series.tmdb;
@@ -64,9 +69,29 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
   @override
   void initState() {
     super.initState();
+    _checkLastWatchedEpisode();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
+  }
+
+  Future<void> _checkLastWatchedEpisode() async {
+    try {
+      final storage = StorageService();
+      // Tenta buscar pelo seriesName (mais confiável) ou pelo nome
+      final seriesName = _tmdb?.title ?? widget.series.name;
+      final history = await storage.getLastWatchedEpisode(seriesName);
+      
+      if (mounted) {
+        setState(() {
+          _lastWatchedEpisode = history;
+          _isLoadingHistory = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar histórico: $e');
+      if (mounted) setState(() => _isLoadingHistory = false);
+    }
   }
 
   List<int> get _availableSeasons => widget.series.sortedSeasons;
@@ -107,6 +132,37 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
       episodes: _buildEpisodesMap(),
       tmdb: _tmdb ?? episode.tmdb,
     );
+  }
+
+  /// Retoma o último episódio assistido
+  void _resumeLastEpisode() {
+    if (_lastWatchedEpisode == null) return;
+    
+    final seasonNum = _lastWatchedEpisode!['season'] as int;
+    final episodeNum = _lastWatchedEpisode!['episode'] as int;
+    
+    // Encontra o episódio correspondente
+    final seasonEpisodes = widget.series.getSeasonEpisodes(seasonNum);
+    
+    Movie? targetEpisode;
+    for (final ep in seasonEpisodes) {
+      if (ep.episode == episodeNum) {
+        targetEpisode = ep;
+        break;
+      }
+    }
+    
+    if (targetEpisode != null) {
+      final enrichedEpisode = _createEnrichedEpisode(targetEpisode);
+      Navigator.of(context).pushNamed('/movie-player', arguments: enrichedEpisode);
+    } else {
+      // Fallback: tenta S1E1 se não achar
+      final episodes = _currentSeasonEpisodes;
+      if (episodes.isNotEmpty) {
+        final enrichedEpisode = _createEnrichedEpisode(episodes.first);
+        Navigator.of(context).pushNamed('/movie-player', arguments: enrichedEpisode);
+      }
+    }
   }
   
   // Cria um Movie com episódios para favoritar a série inteira
@@ -769,7 +825,7 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
     Color color;
     String label;
     IconData icon;
-    
+
     switch (status.toLowerCase()) {
       case 'ended':
         color = Colors.grey;
@@ -817,26 +873,44 @@ class _SeriesModalOptimizedState extends State<SeriesModalOptimized> {
     );
   }
 
+
   Widget _buildActionButtons() {
     final favProvider = context.watch<MovieFavoritesProvider>();
     final isFavorite = favProvider.isFavorite(_seriesAsMovie.id);
     
+    // Texto do botão assistir/continuar
+    String watchButtonLabel = 'Assistir';
+    IconData watchButtonIcon = Icons.play_arrow_rounded;
+    
+    if (_lastWatchedEpisode != null) {
+      final season = _lastWatchedEpisode!['season'];
+      final episode = _lastWatchedEpisode!['episode'];
+      watchButtonLabel = 'Continuar S${season}E$episode';
+      watchButtonIcon = Icons.history_rounded;
+    }
+    
     return Row(
       children: [
-        // Botão Assistir
+        // Botão Assistir / Continuar
         Expanded(
           flex: 2,
           child: GestureDetector(
             onTap: () {
-              final episodes = _currentSeasonEpisodes;
-              if (episodes.isNotEmpty) {
-                final enrichedEpisode = _createEnrichedEpisode(episodes.first);
-                Navigator.of(context).pushNamed('/movie-player', arguments: enrichedEpisode);
+              if (_lastWatchedEpisode != null) {
+                 // Continuar de onde parou
+                 _resumeLastEpisode();
+              } else {
+                // Assistir do começo
+                final episodes = _currentSeasonEpisodes;
+                if (episodes.isNotEmpty) {
+                  final enrichedEpisode = _createEnrichedEpisode(episodes.first);
+                  Navigator.of(context).pushNamed('/movie-player', arguments: enrichedEpisode);
+                }
               }
             },
             child: _buildActionButton(
-              'Assistir',
-              Icons.play_arrow_rounded,
+              watchButtonLabel,
+              watchButtonIcon,
               _currentSection == 0 && _selectedButton == 0,
               isPrimary: true,
             ),

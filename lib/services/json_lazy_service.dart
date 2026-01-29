@@ -301,6 +301,9 @@ class JsonLazyService {
       stopwatch.stop();
       debugPrint('✅ Categoria carregada em ${stopwatch.elapsedMilliseconds}ms');
       debugPrint('   🎬 ${categoryData.movies.length} filmes, 📺 ${categoryData.series.length} séries');
+      
+      // [NOVO] Salva índice leve para buscas futuras
+      _saveCategoryIdsIndex(categoryId, categoryData);
 
       return categoryData;
     } catch (e, stack) {
@@ -308,6 +311,40 @@ class JsonLazyService {
       debugPrint('Stack: $stack');
       return null;
     }
+  }
+
+  /// Recupera APENAS os IDs da categoria (cache super leve)
+  Future<Set<int>?> _getCategoryIdsLightweight(String categoryId) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/json_cache/idx_$categoryId.json');
+      
+      if (file.existsSync()) {
+        final content = await file.readAsString();
+        final List<dynamic> list = jsonDecode(content);
+        return list.cast<int>().toSet();
+      }
+    } catch (e) {
+      // Ignora erro de cache index
+    }
+    return null;
+  }
+
+  /// Salva índice leve
+  Future<void> _saveCategoryIdsIndex(String categoryId, JsonCategoryData data) async {
+     try {
+       final Set<int> ids = {};
+       for (final m in data.movies) if (m.tmdb?.id != null) ids.add(m.tmdb!.id!);
+       for (final s in data.series) if (s.tmdb?.id != null) ids.add(s.tmdb!.id!);
+       
+       if (ids.isNotEmpty) {
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/json_cache/idx_$categoryId.json');
+        await file.writeAsString(jsonEncode(ids.toList()));
+       }
+     } catch (e) {
+       debugPrint('Erro ao salvar index leve: $e');
+     }
   }
 
   /// Parse em isolate
@@ -567,16 +604,33 @@ class JsonLazyService {
          return aPriority.compareTo(bPriority);
       });
 
+    // OTIMIZAÇÃO: Usa cache leve de IDs para evitar carregar/parsear JSONs gigantes inutilmente
+    // Cache de IDs em memória para o loop atual
+    final catIdsCache = <String, Set<int>>{};
+
     for (final cat in orderedCats) {
       if (!includeAdult && cat.isAdult) continue;
       
-      // Pula se já verificamos (estava em memória)
+      // Pula se já verificamos (estava em memória) - já foi tratado acima
       if (_categoryCache.containsKey(cat.id)) continue; 
       
+      // 1. Tenta obter apenas a lista de IDs da categoria (Rápido)
+      Set<int>? idsInCategory = await _getCategoryIdsLightweight(cat.id);
+      
+      // 2. Se conseguiu os IDs (via cache), verifica intersecção antes de carregar tudo
+      if (idsInCategory != null) {
+        final hasAny = idsToFind.any((id) => idsInCategory!.contains(id));
+        if (!hasAny) {
+           // Skip: Nenhum dos itens buscados está nesta categoria
+           continue;
+        }
+      }
+      
+      // 3. Se não tem índice OU tem match, carrega a categoria real
       final data = await loadCategory(cat.id);
       if (data == null) continue;
       
-      // Verifica filmes e séries
+      // Verifica filmes e séries e ATUALIZAR result
       for (final movie in [...data.movies, ...data.series]) {
         if (movie.tmdb?.id != null && idsToFind.contains(movie.tmdb!.id)) {
           results[movie.tmdb!.id!] = movie;
@@ -584,12 +638,8 @@ class JsonLazyService {
         }
       }
       
-      // YIELD: Allow UI to render between category loads to prevent freezing
+      // YIELD: Allow UI to render between category loads
       await Future.delayed(Duration.zero);
-
-      // Otimização de memória: Se a categoria não estava carregada e foi carregada só pra isso,
-      // podemos considerar descarregar se a memória estiver cheia (o _manageCacheSize já faz isso periodicamente),
-      // mas como estamos num loop pesado, vamos deixar o LRU cuidar.
 
       if (idsToFind.isEmpty) break; // Achou tudo
     }

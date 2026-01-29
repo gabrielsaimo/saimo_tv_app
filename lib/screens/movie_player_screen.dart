@@ -241,6 +241,21 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
       final position = _videoController!.value.position;
       final storage = StorageService();
       await storage.saveMovieProgress(_currentMovie!.id, position.inSeconds);
+      
+      // Se for série, salva também qual episódio está sendo assistido
+      if (_currentMovie!.type == MovieType.series && 
+          (_currentMovie!.seriesName != null || _currentMovie!.name.isNotEmpty)) {
+        final seriesName = _currentMovie!.seriesName ?? _currentMovie!.name;
+        final season = _currentMovie!.season ?? 1;
+        final episode = _currentMovie!.episode ?? 1;
+        
+        await storage.saveLastWatchedEpisode(
+          seriesName,
+          _currentMovie!.id,
+          season,
+          episode,
+        );
+      }
     } catch (e) {
       debugPrint('Erro ao salvar progresso: $e');
     }

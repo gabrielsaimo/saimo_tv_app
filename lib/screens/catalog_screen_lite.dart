@@ -264,14 +264,18 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           // Se deve pular tendências, vai direto para filtros
           if (skipTrending) {
             _section = 1;
+            _scrollController.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
           } else {
             // Sobe para tendências da semana (se existir) ou de hoje
             if (_trendingWeek.isNotEmpty) {
               _section = 3;
+              _scrollToMainSection(3);
             } else if (_trendingToday.isNotEmpty) {
               _section = 2;
+              _scrollToMainSection(2);
             } else {
               _section = 1;
+              _scrollController.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
             }
           }
         }
@@ -279,12 +283,15 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
         // Na seção de tendências da semana
         if (_trendingToday.isNotEmpty) {
           _section = 2;
+          _scrollToMainSection(2);
         } else {
           _section = 1;
+          _scrollController.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
         }
       } else if (_section == 2) {
         // Na seção de tendências de hoje
         _section = 1;
+        _scrollController.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
       } else if (_section == 1) {
         _section = 0;
       }
@@ -303,9 +310,8 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       itemCount = favProvider.count;
     } else if (provider.selectedCategoryName == 'Todos') {
       itemCount = provider.availableCategories.length - 1; // Exclui "Todos"
-    } else if (provider.selectedCategoryName == '📊 Tendências') {
-      itemCount = 0; // Tendências não tem grid na secao 4
     } else {
+      // Tendências AGORA tem grid, então usa displayItems normalmente
       itemCount = provider.displayItems.length;
     }
     final rows = (itemCount / _columns).ceil();
@@ -319,28 +325,44 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           _section = 4;
           _contentRow = 0;
           _contentCol = 0;
+          _scrollToRow();
         } else {
           // Desce para tendências de hoje (se existir)
           if (_trendingToday.isNotEmpty) {
             _section = 2;
             _trendingTodayIndex = 0;
+            _scrollToMainSection(2);
           } else if (_trendingWeek.isNotEmpty) {
             _section = 3;
             _trendingWeekIndex = 0;
+            _scrollToMainSection(3);
           } else {
-            // Se não tem tendências, não faz nada (não existe grid)
+            // Se não tem tendências, vai para o grid
+            _section = 4;
+            _contentRow = 0;
+            _contentCol = 0;
+            _scrollToRow();
           }
         }
       } else if (_section == 2) {
-        // De tendências de hoje para tendências da semana
+        // De tendências de hoje para tendências da semana ou grid
         if (_trendingWeek.isNotEmpty) {
           _section = 3;
           _trendingWeekIndex = 0;
+          _scrollToMainSection(3);
         } else {
-          // Fim (não tem grid em Tendências)
+          // Vai para o grid
+          _section = 4;
+          _contentRow = 0;
+          _contentCol = 0;
+          _scrollToRow();
         }
       } else if (_section == 3) {
-        // Fim (não tem grid em Tendências)
+        // De tendências da semana para o grid
+        _section = 4;
+        _contentRow = 0;
+        _contentCol = 0;
+        _scrollToRow();
       } else if (_section == 4 && _contentRow < rows - 1) {
         _contentRow++;
         _scrollToRow();
@@ -659,6 +681,31 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           _scrollController.jumpTo(0);
         },
       ),
+    );
+  }
+
+  void _scrollToMainSection(int section) {
+    if (!_scrollController.hasClients) return;
+    
+    // Calcula offsets aproximados
+    // Header (56) + Filtros (48) + Padding (12)
+    double offset = 0;
+    
+    if (section == 2) {
+      // Tendências Hoje: logo abaixo dos filtros
+      offset = 0; // Scroll principal fica no topo
+    } else if (section == 3) {
+      // Tendências Semana: Abaixo de Hoje
+      // Altura aprox de Hoje: Título (40) + Card (210) + Spacing (20)
+      if (_trendingToday.isNotEmpty) {
+        offset = 40 + _cardHeight + 20; 
+      }
+    }
+    
+    _scrollController.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
     );
   }
 
@@ -1173,6 +1220,45 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           ),
         
         const SizedBox(height: 20),
+        
+        // === RESTO DO CONTEÚDO (GRID) ===
+        // Permite navegação contínua para baixo
+        if (provider.displayItems.isNotEmpty) ...[
+           const Padding(
+            padding: EdgeInsets.only(left: 8, bottom: 12),
+            child: Text(
+              '📜 Outros Títulos',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: _columns,
+              childAspectRatio: _cardWidth / _cardHeight,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: provider.displayItems.length,
+            itemBuilder: (context, index) {
+              final row = index ~/ _columns;
+              final col = index % _columns;
+              final isFocused = _section == 4 && _contentRow == row && _contentCol == col;
+              
+              return _ContentCard(
+                item: provider.displayItems[index],
+                isFocused: isFocused,
+                onTap: () => _showDetail(provider.displayItems[index]),
+              );
+            },
+          ),
+          const SizedBox(height: 40), // Espaço extra no final
+        ],
       ],
     );
   }

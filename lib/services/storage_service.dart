@@ -267,6 +267,42 @@ class StorageService {
     await prefs.setString(_lastModeKey, mode);
   }
 
+  // ===== Último Episódio Assistido (Séries) =====
+
+  static const String _lastEpisodePrefix = 'saimo_tv_series_last_episode_';
+
+  Future<void> saveLastWatchedEpisode(String seriesName, String episodeId, int season, int episode) async {
+    final prefs = await _getPrefs();
+    final key = _lastEpisodePrefix + seriesName.toLowerCase().trim().hashCode.toString();
+    
+    final data = {
+      'episodeId': episodeId,
+      'season': season,
+      'episode': episode,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+    
+    await prefs.setString(key, jsonEncode(data));
+    debugPrint('[StorageService] Saved last episode for $seriesName: S${season}E$episode');
+  }
+
+  Future<Map<String, dynamic>?> getLastWatchedEpisode(String seriesName) async {
+    final prefs = await _getPrefs();
+    final key = _lastEpisodePrefix + seriesName.toLowerCase().trim().hashCode.toString();
+    
+    final json = prefs.getString(key);
+    if (json != null) {
+      return jsonDecode(json) as Map<String, dynamic>;
+    }
+    return null;
+  }
+  
+  /// Helper genérico para pegar string
+  Future<String?> getString(String key) async {
+    final prefs = await _getPrefs();
+    return prefs.getString(key);
+  }
+
   // ===== Limpar tudo =====
 
   Future<void> clearAll() async {
