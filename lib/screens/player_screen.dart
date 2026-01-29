@@ -470,9 +470,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final key = event.logicalKey;
     
     // Verificação para botão VOLTAR - usa apenas LogicalKeyboardKey (mais confiável)
-  // REMOVIDO: goBack e browserBack pois o PopScope já trata isso via sistema
-  // Mantemos apenas ESC pois em alguns teclados ele não dispara onPopInvoked
-  final isBackButton = key == LogicalKeyboardKey.escape;
+  // Usa o verificador padrão do KeyDebouncer que inclui goBack, escape e browserBack
+  final isBackButton = KeyDebouncer.isBackKey(key);
   
   if (isBackButton) {
     if (_debouncer.shouldProcessBack()) {
