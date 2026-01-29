@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:http/http.dart' as http;
 import '../models/channel.dart';
+import '../models/category.dart';
 import '../models/program.dart';
 import '../providers/channels_provider.dart';
 import '../providers/player_provider.dart';
@@ -46,6 +47,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   String? _error;
   double _volume = 1.0;
   bool _isMuted = false;
+  
+  // Helper para obter lista de canais correta (filtrada ou não)
+  List<Channel> _getDisplayChannels(ChannelsProvider channelsProvider, [FavoritesProvider? favoritesProvider]) {
+    if (channelsProvider.selectedCategory == ChannelCategory.favoritos) {
+      final favProvider = favoritesProvider ?? context.read<FavoritesProvider>();
+      return channelsProvider.channels
+          .where((c) => favProvider.isFavorite(c.id))
+          .toList();
+    }
+    return channelsProvider.currentCategoryChannels;
+  }
   
   // EPG Loading progress
   int _epgLoaded = 0;
@@ -127,6 +139,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         title: channel.name,
         isFavorite: context.read<FavoritesProvider>().isFavorite(channel.id), 
         onToggleFavorite: () {
+            debugPrint('[PlayerScreen] Toggling favorite for ID: ${channel.id}');
             context.read<FavoritesProvider>().toggleFavorite(channel.id);
         },
         onOpenGuide: () {
@@ -205,7 +218,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final currentChannel = playerProvider.currentChannel;
     
     if (currentChannel != null) {
-      final channels = channelsProvider.currentCategoryChannels;
+      final channels = _getDisplayChannels(channelsProvider);
       final index = channels.indexWhere((c) => c.id == currentChannel.id);
       if (index >= 0) {
         _selectedChannelIndex = index;
@@ -511,8 +524,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final channelsProvider = context.read<ChannelsProvider>();
     final playerProvider = context.read<PlayerProvider>();
     final currentChannel = playerProvider.currentChannel;
-    // Usa apenas canais da categoria atual para navegação
-    final channels = channelsProvider.currentCategoryChannels;
+    // Usa lista CORRETA de display (corrigindo bug de favoritos vazios)
+    final channels = _getDisplayChannels(channelsProvider);
     
     // Tratamento especial para Menu (Fire TV)
     if (key == LogicalKeyboardKey.contextMenu) {
@@ -528,7 +541,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         HapticFeedback.mediumImpact();
         if (_showChannelList) {
           // Confirma o canal selecionado
-          if (_selectedChannelIndex >= 0 && _selectedChannelIndex < channels.length) {
+          if (channels.isNotEmpty && _selectedChannelIndex >= 0 && _selectedChannelIndex < channels.length) {
             _changeChannel(channels[_selectedChannelIndex]);
           }
           _hideChannelList();
@@ -550,10 +563,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           _resetChannelListTimer();
         } else {
           // MUDA PARA O CANAL ANTERIOR
-          final newIndex = (_selectedChannelIndex - 1).clamp(0, channels.length - 1);
-          if (newIndex != _selectedChannelIndex && newIndex < channels.length) {
-            setState(() => _selectedChannelIndex = newIndex);
-            _changeChannel(channels[newIndex]);
+          if (channels.isNotEmpty) {
+            final newIndex = (_selectedChannelIndex - 1).clamp(0, channels.length - 1);
+            if (newIndex != _selectedChannelIndex && newIndex < channels.length) {
+              setState(() => _selectedChannelIndex = newIndex);
+              _changeChannel(channels[newIndex]);
+            }
           }
         }
         break;
@@ -570,10 +585,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           _resetChannelListTimer();
         } else {
           // MUDA PARA O PRÓXIMO CANAL
-          final newIndex = (_selectedChannelIndex + 1).clamp(0, channels.length - 1);
-          if (newIndex != _selectedChannelIndex && newIndex < channels.length) {
-            setState(() => _selectedChannelIndex = newIndex);
-            _changeChannel(channels[newIndex]);
+          if (channels.isNotEmpty) {
+            final newIndex = (_selectedChannelIndex + 1).clamp(0, channels.length - 1);
+            if (newIndex != _selectedChannelIndex && newIndex < channels.length) {
+              setState(() => _selectedChannelIndex = newIndex);
+              _changeChannel(channels[newIndex]);
+            }
           }
         }
         break;
@@ -582,15 +599,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       case LogicalKeyboardKey.arrowRight:
         if (_showChannelList) {
           // Navega para o próximo canal na lista
-          final newIndex = (_selectedChannelIndex + 1).clamp(0, channels.length - 1);
-          setState(() {
-            _selectedChannelIndex = newIndex;
-            _selectedProgramIndex = 0;  // Reseta seleção de programa
-          });
-          _scrollToSelectedChannel();
-          _resetChannelListTimer();
-          // Carrega EPG do canal selecionado
-          _loadEpgForSelectedChannel(channels[newIndex].id);
+          if (channels.isNotEmpty) {
+            final newIndex = (_selectedChannelIndex + 1).clamp(0, channels.length - 1);
+            setState(() {
+              _selectedChannelIndex = newIndex;
+              _selectedProgramIndex = 0;  // Reseta seleção de programa
+            });
+            _scrollToSelectedChannel();
+            _resetChannelListTimer();
+            // Carrega EPG do canal selecionado
+            _loadEpgForSelectedChannel(channels[newIndex].id);
+          }
         } else {
           // AUMENTA O VOLUME
           _setVolume(_volume + 0.1);
@@ -602,15 +621,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       case LogicalKeyboardKey.arrowLeft:
         if (_showChannelList) {
           // Navega para o canal anterior na lista
-          final newIndex = (_selectedChannelIndex - 1).clamp(0, channels.length - 1);
-          setState(() {
-            _selectedChannelIndex = newIndex;
-            _selectedProgramIndex = 0;  // Reseta seleção de programa
-          });
-          _scrollToSelectedChannel();
-          _resetChannelListTimer();
-          // Carrega EPG do canal selecionado
-          _loadEpgForSelectedChannel(channels[newIndex].id);
+          if (channels.isNotEmpty) {
+            final newIndex = (_selectedChannelIndex - 1).clamp(0, channels.length - 1);
+            setState(() {
+              _selectedChannelIndex = newIndex;
+              _selectedProgramIndex = 0;  // Reseta seleção de programa
+            });
+            _scrollToSelectedChannel();
+            _resetChannelListTimer();
+            // Carrega EPG do canal selecionado
+            _loadEpgForSelectedChannel(channels[newIndex].id);
+          }
         } else {
           // DIMINUI O VOLUME
           _setVolume(_volume - 0.1);
@@ -878,12 +899,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     // Atualiza estado local imediatamente para feedback instantâneo
     setState(() {
       final channelsProvider = context.read<ChannelsProvider>();
-      // Usa currentCategoryChannels se possível, ou channels geral
-      // Aqui usamos channels mesmo para achar o index absoluto se necessário, 
-      // mas para navegação visual é melhor manter sincronizado com o que a lista mostra
-      final allChannels = channelsProvider.channels;
-      final index = allChannels.indexWhere((c) => c.id == channel.id);
-      if (index >= 0) _selectedChannelIndex = index;
+      // FIX: Use DISPLAY channels to calculate index, not ALL channels
+      // This fixes the "jumping" bug where index was based on master list (e.g. 150)
+      // but navigation clamped it to filtered list (e.g. 10)
+      final displayChannels = _getDisplayChannels(channelsProvider);
+      final index = displayChannels.indexWhere((c) => c.id == channel.id);
+      
+      if (index >= 0) {
+        _selectedChannelIndex = index;
+      } else {
+         // Fallback: se não achar na lista atual, acha na geral mas não atualiza index visual (evita pulo)
+         // Ou reseta para 0
+         _selectedChannelIndex = 0;
+      }
       
       _isBuffering = true; // Mostra loading imediatamente
       _error = null;
@@ -1129,12 +1157,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
   
   Widget _buildChannelListOverlay() {
-    return Consumer3<ChannelsProvider, PlayerProvider, EpgProvider>(
-      builder: (context, channelsProvider, playerProvider, epgProvider, child) {
-        // Fix: Use ONLY channels from current category
-        final channels = channelsProvider.currentCategoryChannels;
+    return Consumer4<ChannelsProvider, PlayerProvider, EpgProvider, FavoritesProvider>(
+      builder: (context, channelsProvider, playerProvider, epgProvider, favoritesProvider, child) {
+        // Fix: Use ONLY channels from current category (or Favorites)
+        final channels = _getDisplayChannels(channelsProvider, favoritesProvider);
         final currentChannel = playerProvider.currentChannel;
-        final selectedChannel = _selectedChannelIndex < channels.length 
+        final selectedChannel = (channels.isNotEmpty && _selectedChannelIndex < channels.length) 
             ? channels[_selectedChannelIndex] 
             : null;
         final currentProgram = selectedChannel != null 
@@ -1192,7 +1220,31 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                         SizedBox(height: 6 * scale),
                         
                         // === LISTA DE CANAIS HORIZONTAL ===
-                        _buildChannelsStrip(channels, currentChannel, scale),
+                        // === LISTA DE CANAIS HORIZONTAL ===
+                        if (channels.isEmpty)
+                          Container(
+                            height: 120 * scale,
+                            margin: EdgeInsets.symmetric(horizontal: 12 * scale),
+                            alignment: Alignment.center,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.favorite_border, size: 40 * scale, color: SaimoTheme.textTertiary),
+                                SizedBox(height: 10 * scale),
+                                Text(
+                                  channelsProvider.selectedCategory == ChannelCategory.favoritos
+                                      ? 'Nenhum favorito adicionado'
+                                      : 'Nenhum canal encontrado',
+                                  style: TextStyle(
+                                    color: SaimoTheme.textSecondary, 
+                                    fontSize: 16 * scale
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          _buildChannelsStrip(channels, currentChannel, scale),
                         
                         // === DICAS DE NAVEGAÇÃO ===
                         Padding(

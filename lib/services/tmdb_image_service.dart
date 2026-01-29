@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 /// Serviço de busca de imagens, rating e classificação do TMDB
@@ -233,7 +234,7 @@ class TMDBImageService {
         return scoredResults.first['result'] as Map<String, dynamic>;
       }
     } catch (e) {
-      print('Erro na busca TMDB: $e');
+      debugPrint('Erro na busca TMDB: $e');
     }
 
     return null;
@@ -373,7 +374,7 @@ class TMDBImageService {
         }
       }
     } catch (e) {
-      print('Erro ao obter certificação do filme: $e');
+      debugPrint('Erro ao obter certificação do filme: $e');
     }
     
     return null;
@@ -406,7 +407,7 @@ class TMDBImageService {
         }
       }
     } catch (e) {
-      print('Erro ao obter certificação da série: $e');
+      debugPrint('Erro ao obter certificação da série: $e');
     }
     
     return null;
@@ -487,7 +488,7 @@ class TMDBImageService {
         'tagline': response['tagline'],
       };
     } catch (e) {
-      print('Erro ao obter detalhes do filme: $e');
+      debugPrint('Erro ao obter detalhes do filme: $e');
     }
     
     return null;
@@ -555,7 +556,7 @@ class TMDBImageService {
         'tagline': response['tagline'],
       };
     } catch (e) {
-      print('Erro ao obter detalhes da série: $e');
+      debugPrint('Erro ao obter detalhes da série: $e');
     }
     
     return null;
@@ -581,7 +582,7 @@ class TMDBImageService {
         return _makeRequest(endpoint, params);
       }
     } catch (e) {
-      print('Erro na requisição: $e');
+      debugPrint('Erro na requisição: $e');
     }
 
     return null;

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/program.dart';
@@ -96,7 +97,7 @@ class EpgService {
       try {
         listener(_loadedCount, _totalCount);
       } catch (e) {
-        print('[EPG] Erro em progress listener: $e');
+        debugPrint('[EPG] Erro em progress listener: $e');
       }
     }
   }
@@ -114,7 +115,7 @@ class EpgService {
       try {
         listener(channelId, programs);
       } catch (e) {
-        print('[EPG] Erro em listener: $e');
+        debugPrint('[EPG] Erro em listener: $e');
       }
     }
   }
@@ -124,11 +125,11 @@ class EpgService {
   /// Inicializa o serviço de EPG
   Future<bool> initialize() async {
     if (_initialized) {
-      print('[EPG] Já inicializado');
+      debugPrint('[EPG] Já inicializado');
       return true;
     }
     
-    print('[EPG] Inicializando serviço com cache inteligente...');
+    debugPrint('[EPG] Inicializando serviço com cache inteligente...');
     
     // Carrega cache do storage
     await _loadCacheFromStorage();
@@ -136,8 +137,8 @@ class EpgService {
     // Identifica canais que precisam atualizar
     final channelsNeedingUpdate = _getChannelsNeedingUpdate();
     
-    print('[EPG] Cache carregado: ${_epgCache.length} canais');
-    print('[EPG] Canais precisando atualização: ${channelsNeedingUpdate.length}');
+    debugPrint('[EPG] Cache carregado: ${_epgCache.length} canais');
+    debugPrint('[EPG] Canais precisando atualização: ${channelsNeedingUpdate.length}');
     
     _initialized = true;
     
@@ -177,10 +178,10 @@ class EpgService {
           _lastFetch[channelId] = channelLastUpdate[channelId] ?? 0;
         });
         
-        print('[EPG] Cache restaurado: ${_epgCache.length} canais');
+        debugPrint('[EPG] Cache restaurado: ${_epgCache.length} canais');
       }
     } catch (e) {
-      print('[EPG] Erro ao carregar cache: $e');
+      debugPrint('[EPG] Erro ao carregar cache: $e');
     }
   }
 
@@ -213,9 +214,9 @@ class EpgService {
       await prefs.setString(_cacheKey, jsonEncode(data));
       await prefs.setString(_metaKey, jsonEncode(meta));
       
-      print('[EPG] Cache salvo: ${_epgCache.length} canais');
+      debugPrint('[EPG] Cache salvo: ${_epgCache.length} canais');
     } catch (e) {
-      print('[EPG] Erro ao salvar cache: $e');
+      debugPrint('[EPG] Erro ao salvar cache: $e');
     }
   }
 
@@ -268,7 +269,7 @@ class EpgService {
     _loadedCount = 0;
     _notifyProgressListeners();
     
-    print('[EPG] Iniciando carregamento de ${channelIds.length} canais...');
+    debugPrint('[EPG] Iniciando carregamento de ${channelIds.length} canais...');
     
     const batchSize = 3;
     const delayBetweenBatches = Duration(milliseconds: 1500);
@@ -293,7 +294,7 @@ class EpgService {
     // Salva cache após carregar tudo
     await _saveCacheToStorage();
     
-    print('[EPG] Carregamento completo! ${_epgCache.length} canais com EPG');
+    debugPrint('[EPG] Carregamento completo! ${_epgCache.length} canais com EPG');
   }
 
   // ============== FETCH COM PROXY FALLBACK ==============
@@ -338,7 +339,7 @@ class EpgService {
             }
           } else if (response.statusCode == 429) {
             // Rate limit - próximo proxy
-            print('[EPG] $channelId: Rate limit no proxy $proxyIndex');
+            debugPrint('[EPG] $channelId: Rate limit no proxy $proxyIndex');
             continue;
           }
         } catch (e) {
@@ -395,7 +396,7 @@ class EpgService {
       completer.complete(programs);
       return programs;
     } catch (e) {
-      print('[EPG] $channelId: erro - $e');
+      debugPrint('[EPG] $channelId: erro - $e');
       completer.complete([]);
       return [];
     } finally {
@@ -406,7 +407,7 @@ class EpgService {
   /// Busca EPG do meuguia.tv
   Future<List<Program>> _fetchFromMeuGuia(String channelId, String code) async {
     final url = 'https://meuguia.tv/programacao/canal/$code';
-    print('[EPG] $channelId: buscando de meuguia.tv ($code)');
+    debugPrint('[EPG] $channelId: buscando de meuguia.tv ($code)');
     
     final html = await _fetchWithProxyFallback(url, channelId);
     if (html == null) return [];
@@ -417,7 +418,7 @@ class EpgService {
   /// Busca EPG do guiadetv.com
   Future<List<Program>> _fetchFromGuiaDeTv(String channelId, String slug) async {
     final url = 'https://www.guiadetv.com/canal/$slug';
-    print('[EPG] $channelId: buscando de guiadetv.com ($slug)');
+    debugPrint('[EPG] $channelId: buscando de guiadetv.com ($slug)');
     
     final html = await _fetchWithProxyFallback(url, channelId);
     if (html == null) return [];
@@ -523,9 +524,9 @@ class EpgService {
       programs.sort((a, b) => a.startTime.compareTo(b.startTime));
       _adjustEndTimes(programs);
       
-      print('[EPG] $channelId: ${programs.length} programas (meuguia.tv)');
+      debugPrint('[EPG] $channelId: ${programs.length} programas (meuguia.tv)');
     } catch (e) {
-      print('[EPG] Erro parsing meuguia.tv: $e');
+      debugPrint('[EPG] Erro parsing meuguia.tv: $e');
     }
     
     return programs;
@@ -710,10 +711,10 @@ class EpgService {
       // Ajusta horários de término
       _adjustEndTimes(programs);
       
-      print('[EPG] $channelId: ${programs.length} programas (guiadetv.com)');
+      debugPrint('[EPG] $channelId: ${programs.length} programas (guiadetv.com)');
       
     } catch (e) {
-      print('[EPG] Erro parsing guiadetv.com: $e');
+      debugPrint('[EPG] Erro parsing guiadetv.com: $e');
     }
     
     return programs;

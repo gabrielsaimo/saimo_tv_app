@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 /// Serviço de armazenamento local
 class StorageService {
@@ -28,11 +29,14 @@ class StorageService {
 
   Future<List<String>> getFavorites() async {
     final prefs = await _getPrefs();
-    return prefs.getStringList(_favoritesKey) ?? [];
+    final list = prefs.getStringList(_favoritesKey) ?? [];
+    debugPrint('[StorageService] Retrieved favorites: $list');
+    return list;
   }
 
   Future<void> saveFavorites(List<String> favorites) async {
     final prefs = await _getPrefs();
+    debugPrint('[StorageService] Saving favorites: $favorites');
     await prefs.setStringList(_favoritesKey, favorites);
   }
 

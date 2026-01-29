@@ -95,9 +95,31 @@ class _ChannelsScreenState extends State<ChannelsScreen>
     if (mounted) setState(() {});
   }
 
+  // Helper method to filter categories (hiding Favorites if empty)
+  List<String> _getFilteredCategories(ChannelsProvider channelsProvider, FavoritesProvider favoritesProvider) {
+    var categories = channelsProvider.availableCategories;
+    if (favoritesProvider.favorites.isEmpty) {
+      categories = categories.where((c) => c != ChannelCategory.favoritos).toList();
+    }
+    return categories;
+  }
+
+  // Helper method to get correct channels based on category and favorites
+  List<Channel> _getDisplayChannels(ChannelsProvider channelsProvider) {
+    if (channelsProvider.selectedCategory == ChannelCategory.favoritos) {
+      final favoritesProvider = context.read<FavoritesProvider>();
+      // Filter channels that are in favorites list
+      return channelsProvider.channels
+          .where((c) => favoritesProvider.isFavorite(c.id))
+          .toList();
+    }
+    return channelsProvider.filteredChannels;
+  }
+
   void _initializeCategoryFocusNodes() {
     final channelsProvider = context.read<ChannelsProvider>();
-    final categories = channelsProvider.availableCategories;
+    final favoritesProvider = context.read<FavoritesProvider>();
+    final categories = _getFilteredCategories(channelsProvider, favoritesProvider);
     
     for (var node in _categoryFocusNodes) {
       node.dispose();
@@ -117,7 +139,17 @@ class _ChannelsScreenState extends State<ChannelsScreen>
       
       // Recupera último índice selecionado
       final channelsProvider = context.read<ChannelsProvider>();
-      _selectedChannelIndex = channelsProvider.lastSelectedIndex;
+      // Ensure index is valid for current list
+      final channels = _getDisplayChannels(channelsProvider);
+      
+      int targetIndex = channelsProvider.lastSelectedIndex;
+      if (channels.isEmpty) {
+        targetIndex = 0;
+      } else if (targetIndex >= channels.length) {
+        targetIndex = channels.length - 1;
+      }
+      
+      _selectedChannelIndex = targetIndex;
     });
     
     // Usa o FocusScopeNode para pedir foco no primeiro filho
@@ -138,7 +170,8 @@ class _ChannelsScreenState extends State<ChannelsScreen>
   void _preloadEpg() {
     final channelsProvider = context.read<ChannelsProvider>();
     final epgProvider = context.read<EpgProvider>();
-    epgProvider.preloadFuzzyMatches(channelsProvider.channels);
+    final channels = _getDisplayChannels(channelsProvider);
+    epgProvider.preloadFuzzyMatches(channels);
   }
 
   @override
@@ -183,7 +216,9 @@ class _ChannelsScreenState extends State<ChannelsScreen>
     final channelsProvider = context.read<ChannelsProvider>();
     
     // Encontra o index deste canal na lista atual para salvar
-    final currentIndex = channelsProvider.filteredChannels.indexOf(channel);
+    // Fix: Use correct list (filtered/display channels)
+    final channels = _getDisplayChannels(channelsProvider);
+    final currentIndex = channels.indexOf(channel);
     if (currentIndex >= 0) {
       channelsProvider.setLastSelectedIndex(currentIndex);
     }
@@ -354,7 +389,7 @@ class _ChannelsScreenState extends State<ChannelsScreen>
     if (!_isDpadMode) setState(() => _isDpadMode = true);
     
     final channelsProvider = context.read<ChannelsProvider>();
-    final channels = channelsProvider.filteredChannels;
+    final channels = _getDisplayChannels(channelsProvider);
     final columns = _getColumnCount(context);
     
     int newIndex = channelIndex;
@@ -421,7 +456,8 @@ class _ChannelsScreenState extends State<ChannelsScreen>
     final viewportHeight = _channelsScrollController.position.viewportDimension;
     final maxScroll = _channelsScrollController.position.maxScrollExtent;
     final channelsProvider = context.read<ChannelsProvider>();
-    final totalRows = (channelsProvider.filteredChannels.length / columns).ceil();
+    final channels = _getDisplayChannels(channelsProvider);
+    final totalRows = (channels.length / columns).ceil();
     final estimatedRowHeight = totalRows > 0 ? (maxScroll + viewportHeight) / totalRows : 200.0;
     
     final rowIndex = index ~/ columns;
@@ -939,9 +975,9 @@ class _ChannelsScreenState extends State<ChannelsScreen>
   }
 
   Widget _buildCategoryChips() {
-    return Consumer<ChannelsProvider>(
-      builder: (context, provider, child) {
-        final categories = provider.availableCategories;
+    return Consumer2<ChannelsProvider, FavoritesProvider>(
+      builder: (context, provider, favoritesProvider, child) {
+        final categories = _getFilteredCategories(provider, favoritesProvider);
         
         return Container(
           height: 48,
@@ -979,9 +1015,9 @@ class _ChannelsScreenState extends State<ChannelsScreen>
 
   // ==================== SIDEBAR ====================
   Widget _buildSidebar() {
-    return Consumer<ChannelsProvider>(
-      builder: (context, provider, child) {
-        final categories = provider.availableCategories;
+    return Consumer2<ChannelsProvider, FavoritesProvider>(
+      builder: (context, provider, favoritesProvider, child) {
+        final categories = _getFilteredCategories(provider, favoritesProvider);
         
         if (_categoryFocusNodes.length != categories.length) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1186,7 +1222,7 @@ class _ChannelsScreenState extends State<ChannelsScreen>
           );
         }
 
-        final channels = channelsProvider.filteredChannels;
+        final channels = _getDisplayChannels(channelsProvider);
         final columns = _getColumnCount(context);
         final isTV = _isTV(context) || _isDpadMode;
 
@@ -1608,8 +1644,10 @@ class _ChannelsScreenState extends State<ChannelsScreen>
   Widget _buildMiniGuideOverlay() {
     return Consumer2<ChannelsProvider, EpgProvider>(
       builder: (context, channelsProvider, epgProvider, child) {
-        final selectedChannel = _selectedChannelIndex < channelsProvider.filteredChannels.length
-            ? channelsProvider.filteredChannels[_selectedChannelIndex]
+        // Fix: Use filtered display channels
+        final channels = _getDisplayChannels(channelsProvider);
+        final selectedChannel = _selectedChannelIndex < channels.length
+            ? channels[_selectedChannelIndex]
             : null;
 
         if (selectedChannel == null) return const SizedBox();

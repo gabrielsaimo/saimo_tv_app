@@ -32,9 +32,9 @@ class VersionManager {
         final hasUpdate = _isVersionGreaterThan(remoteVersion, currentVersion);
 
         if (kDebugMode) {
-          print('Versão Local: $currentVersion');
-          print('Versão Remota: $remoteVersion');
-          print('Atualização Disponível: $hasUpdate');
+          debugPrint('Versão Local: $currentVersion');
+          debugPrint('Versão Remota: $remoteVersion');
+          debugPrint('Atualização Disponível: $hasUpdate');
         }
 
         if (hasUpdate) {
@@ -47,12 +47,12 @@ class VersionManager {
         }
       } else {
         if (kDebugMode) {
-          print('Erro ao buscar versão: ${response.statusCode}');
+          debugPrint('Erro ao buscar versão: ${response.statusCode}');
         }
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Erro ao verificar atualização: $e');
+        debugPrint('Erro ao verificar atualização: $e');
       }
     }
 

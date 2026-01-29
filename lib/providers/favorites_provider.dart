@@ -20,7 +20,9 @@ class FavoritesProvider with ChangeNotifier {
 
     try {
       _favorites = await _storage.getFavorites();
+      debugPrint('[FavoritesProvider] Favorites loaded: ${_favorites.length} items: $_favorites');
     } catch (e) {
+      debugPrint('[FavoritesProvider] Error loading favorites: $e');
       _favorites = [];
     } finally {
       _isLoading = false;
@@ -38,9 +40,11 @@ class FavoritesProvider with ChangeNotifier {
     if (_favorites.contains(channelId)) {
       _favorites.remove(channelId);
       await _storage.removeFavorite(channelId);
+      debugPrint('[FavoritesProvider] Removed: $channelId. New list: $_favorites');
     } else {
       _favorites.add(channelId);
       await _storage.addFavorite(channelId);
+      debugPrint('[FavoritesProvider] Added: $channelId. New list: $_favorites');
     }
     notifyListeners();
   }

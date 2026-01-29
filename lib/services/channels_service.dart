@@ -21,7 +21,7 @@ class ChannelsService {
         throw Exception('Failed to load channels: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching channels: $e');
+      debugPrint('Error fetching channels: $e');
       rethrow;
     }
   }
@@ -31,7 +31,7 @@ class ChannelsService {
       final content = await rootBundle.loadString('assets/pro_list.m3u');
       return compute(_parseM3u, content);
     } catch (e) {
-      print('Error fetching pro channels: $e');
+      debugPrint('Error fetching pro channels: $e');
       rethrow;
     }
   }
@@ -60,7 +60,7 @@ List<Channel> _parseTypescript(String content) {
   int index = 1;
   for (final match in matches) {
     try {
-      final id = match.group(1)!;
+      final id = match.group(1)!.trim();
       final name = match.group(2)!;
       final url = match.group(3)!;
       final categoryRaw = match.group(4)!;
@@ -87,7 +87,7 @@ List<Channel> _parseTypescript(String content) {
         isAdult: category == ChannelCategory.adulto, // Fix: Explicitly set based on category
       ));
     } catch (e) {
-      print('Error parsing channel match: $e');
+      debugPrint('Error parsing channel match: $e');
     }
   }
 
@@ -160,11 +160,11 @@ List<Channel> _parseM3u(String content) {
       } else if (!line.startsWith('#') && currentName != null) {
           // Is URL
            // Map group to category
-          final category = _mapProCategory(currentGroup ?? '', currentName!);
+          final category = _mapProCategory(currentGroup ?? '', currentName);
           
           channels.add(Channel(
               id: 'pro_${channels.length}', // Generate unique ID
-              name: currentName!,
+              name: currentName,
               url: line,
               logo: currentLogo,
               category: category,
@@ -193,7 +193,12 @@ String _mapProCategory(String group, String name) {
         return ChannelCategory.adulto;
     }
 
-    // 2. Legendados (Novo: Solicitado explicitamente)
+    // 2. 24 Horas (Moved up to prioritize over others)
+    if (lowerGroup.contains('24h') || lowerName.contains('24h')) {
+        return ChannelCategory.channels24h;
+    }
+
+    // 3. Legendados (Novo: Solicitado explicitamente)
     if (lowerGroup.contains('legendado') || lowerName.contains('[leg]') || lowerName.contains('(leg)')) {
         return ChannelCategory.legendados;
     }
@@ -224,10 +229,7 @@ String _mapProCategory(String group, String name) {
         return ChannelCategory.infantil;
     }
     
-    // 6. 24 Horas
-    if (lowerGroup.contains('24h') || lowerName.contains('24h')) {
-        return ChannelCategory.channels24h;
-    }
+
 
     // 7. Qualidade High Priorities (Filmes, Séries, Documentários caem aqui se tiverem tag de qualidade)
     if (lowerGroup.contains('4k') || lowerName.contains('[4k]') || lowerName.contains('uhd')) return ChannelCategory.uhd;

@@ -9,8 +9,8 @@ class Channel {
   final bool isAdult;
   final bool isMpegTs;
 
-  const Channel({
-    required this.id,
+  Channel({
+    required String id,
     required this.name,
     required this.url,
     this.logo,
@@ -18,7 +18,7 @@ class Channel {
     this.channelNumber = 0,
     this.isAdult = false,
     this.isMpegTs = false,
-  });
+  }) : id = id.trim();
 
   factory Channel.fromJson(Map<String, dynamic> json) {
     return Channel(

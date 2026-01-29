@@ -49,7 +49,7 @@ class ChannelsProvider with ChangeNotifier {
       return _channels; // Todos os canais
     }
     if (_selectedCategory == ChannelCategory.favoritos) {
-      return _channels; // Será filtrado pelo FavoritesProvider
+      return []; // UI must filter from all channels using FavoritesProvider
     }
     return _channelsByCategory[_selectedCategory] ?? [];
   }
@@ -200,7 +200,7 @@ class ChannelsProvider with ChangeNotifier {
                 final remoteChannels = await service.fetchChannels();
                 _liteChannels = ChannelsData.mergeChannels(remoteChannels, includeAdult: true);
             } catch (e) {
-                print('Erro ao carregar canais remotos: $e');
+                debugPrint('Erro ao carregar canais remotos: $e');
                 _liteChannels = ChannelsData.getAllChannels(includeAdult: true);
             }
         }
@@ -222,15 +222,18 @@ class ChannelsProvider with ChangeNotifier {
         // A. Categoria Original
         _channelsByCategory.putIfAbsent(channel.category, () => []).add(channel);
         
-        // B. Categorias Virtuais (Baseadas no nome)
+        // 24H Exclusivity: If it's a 24h channel, do NOT add to other virtual lists
         final nameUpper = channel.name.toUpperCase();
+        final is24h = channel.category == ChannelCategory.channels24h || nameUpper.contains('24H');
         
-        if (nameUpper.contains('4K') || nameUpper.contains('UHD')) {
-             _channelsByCategory.putIfAbsent('4K UHD', () => []).add(channel);
+        if (is24h) {
+             _channelsByCategory.putIfAbsent('24h', () => []).add(channel);
+             continue; // EXCLUSIVITY: Skip adding to other virtual categories
         }
         
-        if (nameUpper.contains('24H')) {
-             _channelsByCategory.putIfAbsent('24h', () => []).add(channel);
+        // B. Categorias Virtuais (Baseadas no nome)
+        if (nameUpper.contains('4K') || nameUpper.contains('UHD')) {
+             _channelsByCategory.putIfAbsent('4K UHD', () => []).add(channel);
         }
         
         if (nameUpper.contains('FHD')) {
@@ -254,6 +257,11 @@ class ChannelsProvider with ChangeNotifier {
       _error = 'Erro ao carregar canais: $e';
     } finally {
       _isLoading = false;
+      if (_channels.isNotEmpty) {
+          debugPrint('[ChannelsProvider] Loaded ${_channels.length} channels. First 5 IDs: ${_channels.take(5).map((c) => c.id).toList()}');
+      } else {
+          debugPrint('[ChannelsProvider] Loaded 0 channels.');
+      }
       notifyListeners();
     }
   }

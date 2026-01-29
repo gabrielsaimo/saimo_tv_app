@@ -165,7 +165,7 @@ class EpgProvider with ChangeNotifier {
     });
 
     if (idsToLoad.isNotEmpty) {
-        print('[EPG] Preloading ${idsToLoad.length} fuzzy matched channels');
+      debugPrint('[EPG] Preloading ${idsToLoad.length} fuzzy matched channels');
         // Do not await to avoid blocking channel loading? 
         // Better to await so we have EPG when valid.
         // But loadMultipleEPG is async effectively.
@@ -210,11 +210,11 @@ class EpgProvider with ChangeNotifier {
   Future<void> initializeFromCache() async {
     // Permite recarregar se já foi inicializado mas não tem dados
     if (_initialized && _epgData.isNotEmpty) {
-      print('[EPGProvider] Já inicializado com ${_epgData.length} canais');
+      debugPrint('[EPGProvider] Já inicializado com ${_epgData.length} canais');
       return;
     }
     
-    print('[EPGProvider] Inicializando a partir do cache...');
+    debugPrint('[EPGProvider] Inicializando a partir do cache...');
     
     // Carrega o cache do SharedPreferences imediatamente
     final cachedData = await _epgService.loadAndGetCache();
@@ -230,7 +230,7 @@ class EpgProvider with ChangeNotifier {
     
     _initialized = true;
     
-    print('[EPGProvider] Cache carregado: ${_epgData.length} canais com EPG');
+    debugPrint('[EPGProvider] Cache carregado: ${_epgData.length} canais com EPG');
     
     // Notifica a UI imediatamente para mostrar o que temos
     notifyListeners();
