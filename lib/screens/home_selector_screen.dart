@@ -74,6 +74,11 @@ class _HomeSelectorScreenState extends State<HomeSelectorScreen>
   }
 
   void _selectOption() {
+    // HEAVY OPTIMIZATION: Limpa cache de imagem ao trocar de contexto (TV <-> Movies)
+    // Isso resolve a sensação de "peso" que o usuário relatou
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+
     HapticFeedback.mediumImpact();
     switch (_selectedIndex) {
       case 0:

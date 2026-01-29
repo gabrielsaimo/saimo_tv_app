@@ -583,6 +583,9 @@ class JsonLazyService {
           idsToFind.remove(movie.tmdb!.id);
         }
       }
+      
+      // YIELD: Allow UI to render between category loads to prevent freezing
+      await Future.delayed(Duration.zero);
 
       // Otimização de memória: Se a categoria não estava carregada e foi carregada só pra isso,
       // podemos considerar descarregar se a memória estiver cheia (o _manageCacheSize já faz isso periodicamente),

@@ -334,10 +334,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       
       _activeController = await _createVideoController(url);
 
-      await _activeController!.initialize().timeout(
-        const Duration(seconds: 30),
-        onTimeout: () => throw Exception('Tempo limite excedido ao conectar'),
-      );
+      await _activeController!.initialize();
       
       if (!_activeController!.value.isInitialized) {
         throw Exception('Falha na inicialização do vídeo');
@@ -466,22 +463,21 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final key = event.logicalKey;
     
     // Verificação para botão VOLTAR - usa apenas LogicalKeyboardKey (mais confiável)
-    final isBackButton = 
-        key == LogicalKeyboardKey.goBack ||
-        key == LogicalKeyboardKey.escape ||
-        key == LogicalKeyboardKey.browserBack;
-    
-    if (isBackButton) {
-      if (_debouncer.shouldProcessBack()) {
-        HapticFeedback.lightImpact();
-        if (_showChannelList) {
-          _hideChannelList();
-        } else {
-          _navigateBack();
-        }
+  // REMOVIDO: goBack e browserBack pois o PopScope já trata isso via sistema
+  // Mantemos apenas ESC pois em alguns teclados ele não dispara onPopInvoked
+  final isBackButton = key == LogicalKeyboardKey.escape;
+  
+  if (isBackButton) {
+    if (_debouncer.shouldProcessBack()) {
+      HapticFeedback.lightImpact();
+      if (_showChannelList) {
+        _hideChannelList();
+      } else {
+        _navigateBack();
       }
-      return; // Importante: retorna para não processar mais nada
     }
+    return; // Importante: retorna para não processar mais nada
+  }
 
     final channelsProvider = context.read<ChannelsProvider>();
     final playerProvider = context.read<PlayerProvider>();

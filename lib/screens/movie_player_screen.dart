@@ -671,14 +671,14 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
     }
 
     // Voltar
-    if (key == LogicalKeyboardKey.escape ||
-        key == LogicalKeyboardKey.goBack ||
-        key == LogicalKeyboardKey.browserBack) {
-      if (_debouncer.shouldProcessBack()) {
-        _goBack();
-      }
-      return;
+  // REMOVIDO: goBack e browserBack pois o PopScope já trata isso via sistema
+  // Mantemos apenas ESC
+  if (key == LogicalKeyboardKey.escape) {
+    if (_debouncer.shouldProcessBack()) {
+      _goBack();
     }
+    return;
+  }
 
     // === NAVEGAÇÃO D-PAD ===
     // Esquerda
