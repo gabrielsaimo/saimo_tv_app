@@ -1,33 +1,9 @@
 [
   {
-    "name": "🎬 4K UHD",
-    "file": "4k-uhd.json",
-    "count": 1140,
-    "isAdult": false
-  },
-  {
     "name": "🎬 Ação",
     "file": "acao.json",
-    "count": 1658,
+    "count": 4392,
     "isAdult": false
-  },
-  {
-    "name": "🔞 Adultos - Bella da Semana",
-    "file": "adultos-bella-da-semana.json",
-    "count": 155,
-    "isAdult": true
-  },
-  {
-    "name": "🔞 Adultos - Legendado",
-    "file": "adultos-legendado.json",
-    "count": 1080,
-    "isAdult": true
-  },
-  {
-    "name": "🔞 Adultos",
-    "file": "adultos.json",
-    "count": 9122,
-    "isAdult": true
   },
   {
     "name": "📺 AMC Plus",
@@ -44,7 +20,7 @@
   {
     "name": "📺 Apple TV+",
     "file": "apple-tv.json",
-    "count": 249,
+    "count": 256,
     "isAdult": false
   },
   {
@@ -72,75 +48,9 @@
     "isAdult": false
   },
   {
-    "name": "🎬 Coleção ALIEN",
-    "file": "colecao-alien.json",
-    "count": 3,
-    "isAdult": false
-  },
-  {
-    "name": "🎬 Coleção AMERICAN PIE",
-    "file": "colecao-american-pie.json",
-    "count": 9,
-    "isAdult": false
-  },
-  {
-    "name": "🎬 Coleção CREPÚSCULO",
-    "file": "colecao-crepusculo.json",
-    "count": 5,
-    "isAdult": false
-  },
-  {
-    "name": "🎬 Coleção DENZEL WASHIGNTON",
-    "file": "colecao-denzel-washignton.json",
-    "count": 8,
-    "isAdult": false
-  },
-  {
-    "name": "🎬 Coleção EXTERMINADOR DO FUTURO",
-    "file": "colecao-exterminador-do-futuro.json",
-    "count": 1,
-    "isAdult": false
-  },
-  {
-    "name": "🎬 Coleção JOGOS MORTAIS",
-    "file": "colecao-jogos-mortais.json",
-    "count": 7,
-    "isAdult": false
-  },
-  {
-    "name": "🎬 Coleção JOGOS VORAZES",
-    "file": "colecao-jogos-vorazes.json",
-    "count": 1,
-    "isAdult": false
-  },
-  {
-    "name": "🎬 Coleção O SENHOR DOS ANÉIS",
-    "file": "colecao-o-senhor-dos-aneis.json",
-    "count": 2,
-    "isAdult": false
-  },
-  {
-    "name": "🎬 Coleção SHREK",
-    "file": "colecao-shrek.json",
-    "count": 2,
-    "isAdult": false
-  },
-  {
-    "name": "🎬 Coleção TODO MUNDO EM PÂNICO",
-    "file": "colecao-todo-mundo-em-panico.json",
-    "count": 5,
-    "isAdult": false
-  },
-  {
-    "name": "🎬 Coleção TOY STORY",
-    "file": "colecao-toy-story.json",
-    "count": 1,
-    "isAdult": false
-  },
-  {
     "name": "🎬 Comédia",
     "file": "comedia.json",
-    "count": 2062,
+    "count": 4251,
     "isAdult": false
   },
   {
@@ -156,6 +66,12 @@
     "isAdult": false
   },
   {
+    "name": "Cursos",
+    "file": "cursos.json",
+    "count": 14,
+    "isAdult": false
+  },
+  {
     "name": "📺 DirecTV",
     "file": "directv.json",
     "count": 52,
@@ -164,13 +80,19 @@
   {
     "name": "📺 Discovery+",
     "file": "discovery.json",
-    "count": 320,
+    "count": 328,
     "isAdult": false
   },
   {
     "name": "📺 Disney+",
     "file": "disney.json",
-    "count": 455,
+    "count": 483,
+    "isAdult": false
+  },
+  {
+    "name": "Docu",
+    "file": "docu.json",
+    "count": 1,
     "isAdult": false
   },
   {
@@ -188,13 +110,19 @@
   {
     "name": "🎬 Drama",
     "file": "drama.json",
-    "count": 2538,
+    "count": 5225,
     "isAdult": false
   },
   {
     "name": "🎬 Dublagem Não Oficial",
     "file": "dublagem-nao-oficial.json",
     "count": 45,
+    "isAdult": false
+  },
+  {
+    "name": "Especial Infantil",
+    "file": "especial-infantil.json",
+    "count": 53,
     "isAdult": false
   },
   {
@@ -224,19 +152,19 @@
   {
     "name": "🎬 Ficção Científica",
     "file": "ficcao-cientifica.json",
-    "count": 53,
+    "count": 387,
     "isAdult": false
   },
   {
-    "name": "📺 Funimation",
-    "file": "funimation.json",
-    "count": 21,
+    "name": "Funimation Now",
+    "file": "funimation-now.json",
+    "count": 22,
     "isAdult": false
   },
   {
     "name": "📺 Globoplay",
     "file": "globoplay.json",
-    "count": 439,
+    "count": 747,
     "isAdult": false
   },
   {
@@ -246,15 +174,27 @@
     "isAdult": false
   },
   {
-    "name": "🎬 Infantil",
-    "file": "infantil.json",
-    "count": 49,
-    "isAdult": false
+    "name": "[HOT] Adultos ❌❤️ [Bella da Semana]",
+    "file": "hot-adultos-bella-da-semana.json",
+    "count": 155,
+    "isAdult": true
+  },
+  {
+    "name": "[HOT] Adultos ❌❤️ [LEGENDADO]",
+    "file": "hot-adultos-legendado.json",
+    "count": 1080,
+    "isAdult": true
+  },
+  {
+    "name": "[HOT] Adultos ❌❤️",
+    "file": "hot-adultos.json",
+    "count": 10200,
+    "isAdult": true
   },
   {
     "name": "🎬 Lançamentos",
     "file": "lancamentos.json",
-    "count": 590,
+    "count": 689,
     "isAdult": false
   },
   {
@@ -266,7 +206,7 @@
   {
     "name": "🎬 Legendados",
     "file": "legendados.json",
-    "count": 2195,
+    "count": 10396,
     "isAdult": false
   },
   {
@@ -278,7 +218,7 @@
   {
     "name": "📺 Max",
     "file": "max.json",
-    "count": 501,
+    "count": 541,
     "isAdult": false
   },
   {
@@ -290,7 +230,7 @@
   {
     "name": "📺 Netflix",
     "file": "netflix.json",
-    "count": 1486,
+    "count": 1569,
     "isAdult": false
   },
   {
@@ -306,15 +246,33 @@
     "isAdult": false
   },
   {
+    "name": "Oscar 2025 ⭐",
+    "file": "oscar-2025.json",
+    "count": 9,
+    "isAdult": false
+  },
+  {
     "name": "🎬 Outras Produtoras",
     "file": "outras-produtoras.json",
     "count": 708,
     "isAdult": false
   },
   {
+    "name": "Outros",
+    "file": "outros.json",
+    "count": 474,
+    "isAdult": false
+  },
+  {
+    "name": "Filmes | 4K",
+    "file": "outros_filmes.json",
+    "count": 3866,
+    "isAdult": false
+  },
+  {
     "name": "📺 Paramount+",
     "file": "paramount.json",
-    "count": 162,
+    "count": 201,
     "isAdult": false
   },
   {
@@ -326,7 +284,7 @@
   {
     "name": "📺 Prime Video",
     "file": "prime-video.json",
-    "count": 710,
+    "count": 778,
     "isAdult": false
   },
   {
@@ -344,7 +302,7 @@
   {
     "name": "🎬 Romance",
     "file": "romance.json",
-    "count": 255,
+    "count": 821,
     "isAdult": false
   },
   {
@@ -368,7 +326,7 @@
   {
     "name": "📺 Star+",
     "file": "star.json",
-    "count": 98,
+    "count": 109,
     "isAdult": false
   },
   {
@@ -380,13 +338,19 @@
   {
     "name": "🎬 Suspense",
     "file": "suspense.json",
-    "count": 387,
+    "count": 1034,
     "isAdult": false
   },
   {
     "name": "🎬 Terror",
     "file": "terror.json",
-    "count": 677,
+    "count": 2101,
+    "isAdult": false
+  },
+  {
+    "name": "UHD| 4K ⭐",
+    "file": "uhd-4k.json",
+    "count": 1140,
     "isAdult": false
   },
   {
