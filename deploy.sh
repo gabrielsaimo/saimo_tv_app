@@ -36,9 +36,9 @@ flutter clean
 echo -e "${YELLOW}📦 Instalando dependências...${NC}"
 flutter pub get
 
-# Build APK Release
+# Build APK Release (Compatível com Fire TV 32-bit e 64-bit)
 echo -e "${YELLOW}🔨 Compilando APK Release...${NC}"
-flutter build apk --release --target-platform android-arm64
+flutter build apk --release --target-platform android-arm,android-arm64
 
 # Verificar se APK foi gerado
 APK_PATH="build/app/outputs/flutter-apk/app-release.apk"

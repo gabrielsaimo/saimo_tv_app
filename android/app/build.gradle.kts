@@ -34,9 +34,9 @@ android {
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
             
-            // Optimization for Fire TV / Low-end devices
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Optimization for Fire TV / Low-end devices (Disabled for stability)
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

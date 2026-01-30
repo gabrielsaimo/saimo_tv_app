@@ -40,6 +40,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   Timer? _progressTimer;
   Timer? _wakelockTimer; // Timer para heartbeat do wakelock
   Timer? _channelChangeTimer; // Timer para debounce de troca de canal
+  int _retryCount = 0; // Contador de tentativas de reconexão
+  static const int _maxRetries = 3; // Máximo de tentativas automáticas
+  
   final VolumeBoostService _volumeBoostService = VolumeBoostService();
   final KeyDebouncer _debouncer = KeyDebouncer();
   bool _showControls = true;
@@ -253,7 +256,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _hideControlsTimer?.cancel();
     _progressTimer?.cancel();
     _wakelockTimer?.cancel();
-    _channelInputTimer?.cancel();
     _channelListHideTimer?.cancel();
     _channelChangeTimer?.cancel();
 
@@ -338,6 +340,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       _isBuffering = true;
       _error = null;
     });
+    
+    // Reseta monitoramento ao trocar de canal
+    _retryCount = 0;
 
     try {
       _activeController?.dispose();
@@ -401,7 +406,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             );
          }
       }
-      
+
     } catch (e) {
       setState(() {
         _error = 'Erro ao carregar o canal: ${e.toString()}';
@@ -409,12 +414,43 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       });
     }
   }
-  
-  void setCategory(){
+
+  void _handlePlaybackError(String errorMsg) {
+    debugPrint('❌ [ErrorHandler] Erro detectado: $errorMsg');
     
+    if (_retryCount < _maxRetries) {
+       _retryCount++;
+       debugPrint('🔄 [ErrorHandler] Tentativa de recuperação $_retryCount/$_maxRetries...');
+       _retryPlayback(null);
+    } else {
+       // Desiste após max retries e mostra erro na UI
+       setState(() {
+         _error = 'Erro na reprodução: $errorMsg';
+         _isBuffering = false;
+       });
+    }
   }
 
-  // Removido: _initializeBackgroundPlayer, _swapControllers
+  Future<void> _retryPlayback(String? reason) async {
+    if (!mounted) return;
+    
+    // Feedback visual sutil (Opcional - pode ser removido se quiser 100% silencioso)
+    // ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reconectando...')));
+
+    try {
+      final currentUrl = _activeController?.dataSource;
+      if (currentUrl != null) {
+         // Mantem posição se possível (para VOD), mas TV é live então ok reiniciar
+         await _initializePlayer();
+      }
+    } catch (e) {
+      debugPrint('Erro ao tentar reconectar: $e');
+    }
+  }
+
+  void setCategory() {
+    // Implementação da categoria (placeholder mantido para compatibilidade)
+  }
 
   Future<VideoPlayerController> _createVideoController(String url) async {
       final playerProvider = context.read<PlayerProvider>();
@@ -448,10 +484,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     
     // Verifica erros no player
     if (value.hasError && _error == null) {
-      setState(() {
-        _error = value.errorDescription ?? 'Erro na reprodução do vídeo';
-        _isBuffering = false;
-      });
+      _handlePlaybackError(value.errorDescription ?? 'Erro na reprodução do vídeo');
       return;
     }
     
