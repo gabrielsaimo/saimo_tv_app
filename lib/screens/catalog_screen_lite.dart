@@ -1660,7 +1660,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     return ListView(
       controller: _scrollController,
       padding: EdgeInsets.zero,
-      cacheExtent: 1000, // Pre-cache rows to avoid jank
+      cacheExtent: 2000, // Aumentado para 2000 para suavizar carregamento no Fire TV Lite
       children: widgetList,
     );
   }
@@ -1939,7 +1939,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
                // Scale animation logic based on focus
                final scale = isFocused ? 1.0 : 0.95;
                
-               return AnimatedContainer(
+                return AnimatedContainer(
                  duration: const Duration(milliseconds: 300),
                  curve: Curves.easeOutCubic,
                  width: itemWidth,
@@ -1948,32 +1948,34 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
                  child: Stack(
                    fit: StackFit.expand,
                    children: [
-                     // Backdrop Image
+                     // Backdrop Image (Otimizada para Fire TV Lite)
                      Container(
                        decoration: BoxDecoration(
                          borderRadius: BorderRadius.circular(16),
+                         // Sombras apenas se focado para poupar GPU do Fire TV Lite
                          boxShadow: isFocused ? [
-                           BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 20, offset: const Offset(0, 10))
+                           BoxShadow(color: Colors.black.withAlpha(128) , blurRadius: 20, offset: const Offset(0, 10))
                          ] : [],
                        ),
                        clipBehavior: Clip.antiAlias,
                        child: CachedNetworkImage(
                          imageUrl: item.localMovie.backdropUrl ?? item.localMovie.posterUrl,
                          fit: BoxFit.cover,
+                         memCacheWidth: 800, // Limite rigoroso de memória
                          placeholder: (_, __) => Container(color: Colors.grey[900]),
                          errorWidget: (_, __, ___) => Container(color: Colors.grey[900], child: const Icon(Icons.error)),
                        ),
                      ),
                      
-                     // Gradient Overlay
+                     // Gradient Overlay (Uso de withAlpha para performance)
                      Container(
                        decoration: BoxDecoration(
                          borderRadius: BorderRadius.circular(16),
-                         gradient: const LinearGradient(
+                         gradient: LinearGradient(
                            begin: Alignment.topCenter,
                            end: Alignment.bottomCenter,
-                           colors: [Colors.transparent, Colors.black87],
-                           stops: [0.3, 1.0],
+                           colors: [Colors.transparent, Colors.black.withAlpha(220)],
+                           stops: const [0.3, 1.0],
                          ),
                        ),
                      ),
@@ -2334,23 +2336,20 @@ class _ContentCard extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
+            // Borda amarela apenas se focado
             border: isFocused 
                 ? Border.all(color: const Color(0xFFFFD700), width: 3) 
                 : null,
+            // REMOVIDO: boxShadow pesado para itens não focados no Fire TV Lite
             boxShadow: isFocused
                 ? [
                     BoxShadow(
-                      color: const Color(0xFFFFD700).withOpacity(0.6),
+                      color: const Color(0xFFFFD700).withAlpha(153), // 0.6 opacity
                       blurRadius: 24,
                       spreadRadius: 4,
                     ),
                   ]
-                : [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
-                      blurRadius: 8,
-                    ),
-                  ],
+                : null, // Zero shadows na lista para rodar liso no Lite
           ),
           child: Transform.scale(
             scale: isFocused ? 1.06 : 1.0,
@@ -2364,7 +2363,8 @@ class _ContentCard extends StatelessWidget {
                       ? CachedNetworkImage(
                           imageUrl: imageUrl,
                           fit: BoxFit.cover,
-                          memCacheWidth: 300,
+                          memCacheWidth: 260, // Otimizado: largura real do card * 2
+                          memCacheHeight: 390, // Otimizado: altura real do card * 1.5
                           placeholder: (_, __) => _placeholder(),
                           errorWidget: (_, __, ___) => _placeholder(),
                         )
