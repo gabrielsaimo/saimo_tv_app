@@ -1,26 +1,27 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:archive/archive.dart';
 import 'package:http/http.dart' as http;
+import 'dart:io';
+import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 
-/// Serviço de legendas em tempo real usando Vosk nativo.
+/// Serviço de legendas em tempo real usando sherpa-onnx.
 /// 
-/// Este serviço usa um plugin Android nativo que:
-/// 1. Captura áudio diretamente do ExoPlayer (não do microfone)
-/// 2. Processa com Vosk para transcrição em tempo real
-/// 3. Retorna legendas via EventChannel
+/// Este serviço usa sherpa-onnx para reconhecimento de fala offline:
+/// 1. Captura áudio do dispositivo via AudioCapturePlugin nativo
+/// 2. Processa com Whisper em chunks de 3 segundos
+/// 3. Retorna legendas em português
 class StreamCaptionService extends ChangeNotifier {
   static final StreamCaptionService _instance = StreamCaptionService._internal();
   factory StreamCaptionService() => _instance;
   StreamCaptionService._internal();
 
   // Platform channels
-  static const _methodChannel = MethodChannel('com.saimo.saimo_tv/vosk_caption');
-  static const _eventChannel = EventChannel('com.saimo.saimo_tv/vosk_results');
+  static const _methodChannel = MethodChannel('com.saimo.saimo_tv/audio_capture');
+  static const _eventChannel = EventChannel('com.saimo.saimo_tv/caption_audio');
+  StreamSubscription? _audioSubscription;
   
   // State
   bool _isListening = false;
@@ -32,8 +33,15 @@ class StreamCaptionService extends ChangeNotifier {
   double _downloadProgress = 0.0;
   bool _hasError = false;
   
-  // Event subscription
-  StreamSubscription? _eventSubscription;
+  // Sherpa-onnx components
+  sherpa_onnx.OfflineRecognizer? _recognizer;
+  static const int _sampleRate = 16000;
+  
+  // Audio buffer for processing in chunks
+  final List<double> _audioBuffer = [];
+  static const int _bufferSize = _sampleRate * 3; // 3 seconds of audio
+  Timer? _processTimer;
+  bool _isProcessing = false;
   
   // Caption timing
   Timer? _clearTimer;
@@ -47,7 +55,7 @@ class StreamCaptionService extends ChangeNotifier {
   String get statusMessage => _statusMessage;
   double get downloadProgress => _downloadProgress;
 
-  /// Initialize the Vosk model
+  /// Initialize the sherpa-onnx model
   Future<void> initialize() async {
     if (_modelLoaded || _isInitializing) return;
     
@@ -57,31 +65,37 @@ class StreamCaptionService extends ChangeNotifier {
     notifyListeners();
     
     try {
-      // Subscribe to events from native
-      _eventSubscription?.cancel();
-      _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
-        _handleNativeEvent,
-        onError: (e) {
-          debugPrint('[Caption] Event error: $e');
-          _hasError = true;
-          _setStatus('Erro');
-          notifyListeners();
-        },
+      // Initialize sherpa-onnx bindings
+      sherpa_onnx.initBindings();
+      
+      // Ensure model is downloaded
+      final modelDir = await _ensureModelAvailable();
+      if (modelDir == null) {
+        throw Exception('Failed to download model');
+      }
+      
+      // Create recognizer with offline Whisper model (supports Portuguese)
+      final config = sherpa_onnx.OfflineRecognizerConfig(
+        model: sherpa_onnx.OfflineModelConfig(
+          whisper: sherpa_onnx.OfflineWhisperModelConfig(
+            encoder: '$modelDir/tiny-encoder.int8.onnx',
+            decoder: '$modelDir/tiny-decoder.int8.onnx',
+            language: 'pt', // Portuguese
+            task: 'transcribe',
+          ),
+          tokens: '$modelDir/tiny-tokens.txt',
+          modelType: 'whisper',
+          debug: false,
+          numThreads: 2,
+        ),
+        ruleFsts: '',
       );
       
-      // Check if model needs to be downloaded to assets
-      await _ensureModelAvailable();
+      _recognizer = sherpa_onnx.OfflineRecognizer(config);
       
-      // Initialize the native model
-      final result = await _methodChannel.invokeMethod<bool>('initModel');
-      
-      if (result == true) {
-        _modelLoaded = true;
-        _setStatus('Pronto');
-        debugPrint('✅ [Caption] Model initialized');
-      } else {
-        throw Exception('Failed to initialize model');
-      }
+      _modelLoaded = true;
+      _setStatus('Pronto');
+      debugPrint('✅ [Caption] Sherpa-onnx Whisper model initialized');
       
     } catch (e) {
       debugPrint('❌ [Caption] Init error: $e');
@@ -93,131 +107,73 @@ class StreamCaptionService extends ChangeNotifier {
     }
   }
 
-  /// Ensure the Vosk model is available in the app
-  Future<void> _ensureModelAvailable() async {
-    // The model should be bundled in assets or downloaded
-    // For now, we'll try to download it to the documents directory
-    // and let the native code unpack it from there
-    
+  /// Ensure the sherpa-onnx model is available
+  Future<String?> _ensureModelAvailable() async {
     final appDir = await getApplicationDocumentsDirectory();
-    final modelDir = Directory('${appDir.path}/vosk-model-small-pt-0.3');
+    final modelDir = Directory('${appDir.path}/sherpa-onnx-whisper-tiny');
     
     if (await modelDir.exists()) {
-      final files = await modelDir.list().toList();
-      if (files.isNotEmpty) {
+      final encoderFile = File('${modelDir.path}/tiny-encoder.int8.onnx');
+      if (await encoderFile.exists()) {
         debugPrint('[Caption] Model already downloaded');
-        return;
+        return modelDir.path;
       }
     }
     
     // Download the model
-    await _downloadModel(appDir.path);
+    return await _downloadModel(appDir.path);
   }
 
-  /// Download the Vosk Portuguese model
-  Future<void> _downloadModel(String destPath) async {
+  /// Download the sherpa-onnx Whisper model
+  Future<String?> _downloadModel(String destPath) async {
     _setStatus('Baixando modelo de voz...');
-    const url = 'https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip';
+    
+    // Using Whisper tiny int8 model (multilingual, supports Portuguese)
+    final modelDir = Directory('$destPath/sherpa-onnx-whisper-tiny');
+    await modelDir.create(recursive: true);
+    
+    final modelFiles = {
+      'tiny-encoder.int8.onnx': 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-encoder.int8.onnx',
+      'tiny-decoder.int8.onnx': 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-decoder.int8.onnx',
+      'tiny-tokens.txt': 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-tokens.txt',
+    };
     
     try {
-      final client = http.Client();
-      final request = http.Request('GET', Uri.parse(url));
-      final response = await client.send(request);
-      
-      if (response.statusCode != 200) {
-        throw Exception('Download failed: ${response.statusCode}');
-      }
-      
-      final contentLength = response.contentLength ?? 0;
-      final bytes = <int>[];
-      int received = 0;
-      
-      await for (final chunk in response.stream) {
-        bytes.addAll(chunk);
-        received += chunk.length;
+      int downloadedCount = 0;
+      for (final entry in modelFiles.entries) {
+        final fileName = entry.key;
+        final url = entry.value;
+        final filePath = '${modelDir.path}/$fileName';
         
-        if (contentLength > 0) {
-          _downloadProgress = received / contentLength;
-          _setStatus('Baixando modelo... ${(_downloadProgress * 100).toStringAsFixed(0)}%');
+        // Skip if already exists
+        if (await File(filePath).exists()) {
+          downloadedCount++;
+          continue;
         }
+        
+        _setStatus('Baixando $fileName...');
+        _downloadProgress = downloadedCount / modelFiles.length;
+        notifyListeners();
+        
+        final response = await http.get(Uri.parse(url));
+        if (response.statusCode != 200) {
+          throw Exception('Failed to download $fileName: ${response.statusCode}');
+        }
+        
+        await File(filePath).writeAsBytes(response.bodyBytes);
+        downloadedCount++;
+        debugPrint('[Caption] Downloaded: $fileName');
       }
       
-      _setStatus('Instalando modelo...');
-      
-      final archive = ZipDecoder().decodeBytes(Uint8List.fromList(bytes));
-      
-      for (final file in archive) {
-        final filename = '$destPath/${file.name}';
-        if (file.isFile) {
-          final outFile = File(filename);
-          await outFile.create(recursive: true);
-          await outFile.writeAsBytes(file.content as List<int>);
-        } else {
-          await Directory(filename).create(recursive: true);
-        }
-      }
-      
-      client.close();
       _downloadProgress = 1.0;
       _setStatus('Modelo instalado!');
+      return modelDir.path;
       
     } catch (e) {
+      debugPrint('[Caption] Download error: $e');
       _setStatus('Erro no download');
       _hasError = true;
-      rethrow;
-    }
-  }
-
-  /// Handle events from native code
-  void _handleNativeEvent(dynamic event) {
-    if (event is Map) {
-      final type = event['type'] as String?;
-      final data = event['data'] as String?;
-      
-      if (type == null || data == null) return;
-      
-      switch (type) {
-        case 'final':
-          _currentText = data;
-          _partialText = '';
-          
-          _captionHistory.add(data);
-          if (_captionHistory.length > 5) {
-            _captionHistory.removeAt(0);
-          }
-          
-          _clearTimer?.cancel();
-          _clearTimer = Timer(const Duration(seconds: 5), () {
-            _currentText = '';
-            _partialText = '';
-            notifyListeners();
-          });
-          
-          notifyListeners();
-          debugPrint('[Caption] FINAL: $data');
-          break;
-          
-        case 'partial':
-          _partialText = data;
-          notifyListeners();
-          break;
-          
-        case 'status':
-          _setStatus(data);
-          break;
-          
-        case 'modelLoaded':
-          _modelLoaded = true;
-          notifyListeners();
-          break;
-          
-        case 'error':
-          debugPrint('[Caption] Native error: $data');
-          _hasError = true;
-          _setStatus('Erro: $data');
-          notifyListeners();
-          break;
-      }
+      return null;
     }
   }
 
@@ -236,52 +192,172 @@ class StreamCaptionService extends ChangeNotifier {
       }
     }
     
+    // Start native audio capture
     try {
-      final result = await _methodChannel.invokeMethod<bool>('startRecognition');
-      
-      if (result == true) {
-        _isListening = true;
-        _setStatus('Ouvindo...');
+      final result = await _methodChannel.invokeMethod<bool>('startCapture');
+      if (result != true) {
+        debugPrint('[Caption] Failed to start audio capture');
+        _setStatus('Erro ao capturar áudio');
+        _hasError = true;
         notifyListeners();
-        debugPrint('✅ [Caption] Started recognition');
+        return;
       }
+      debugPrint('✅ [Caption] Native audio capture started');
     } catch (e) {
-      debugPrint('❌ [Caption] Start error: $e');
+      debugPrint('[Caption] Audio capture error: $e');
+      _setStatus('Erro de permissão de áudio');
       _hasError = true;
-      _setStatus('Erro ao iniciar');
       notifyListeners();
+      return;
+    }
+    
+    // Clear buffer
+    _audioBuffer.clear();
+    
+    // Subscribe to audio from native plugin
+    _audioSubscription?.cancel();
+    _audioSubscription = _eventChannel.receiveBroadcastStream().listen(
+      (data) {
+        if (data is Uint8List) {
+          _addAudioToBuffer(data);
+        }
+      },
+      onError: (e) {
+        debugPrint('[Caption] Audio stream error: $e');
+      },
+    );
+    
+    // Start periodic processing
+    _processTimer?.cancel();
+    _processTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _processBufferedAudio();
+    });
+    
+    _isListening = true;
+    _setStatus('Ouvindo...');
+    _partialText = '...';
+    notifyListeners();
+    debugPrint('✅ [Caption] Started recognition');
+  }
+
+  /// Add audio data to buffer
+  void _addAudioToBuffer(Uint8List audioData) {
+    final samples = _convertBytesToFloat32(audioData);
+    _audioBuffer.addAll(samples);
+    
+    // Keep buffer at reasonable size (max 30 seconds)
+    const maxBufferSize = _sampleRate * 30;
+    if (_audioBuffer.length > maxBufferSize) {
+      _audioBuffer.removeRange(0, _audioBuffer.length - maxBufferSize);
+    }
+    
+    // Update status when receiving audio
+    if (_isListening && _partialText == '...') {
+      _setStatus('Processando...');
     }
   }
 
-  /// Process audio data from the video player
-  /// This should be called with PCM audio chunks
-  Future<void> processAudio(Uint8List audioData) async {
-    if (!_isListening || !_modelLoaded) return;
+  /// Process buffered audio 
+  Future<void> _processBufferedAudio() async {
+    if (!_isListening || !_modelLoaded || _recognizer == null) return;
+    if (_isProcessing) return;
+    if (_audioBuffer.length < _bufferSize) {
+      debugPrint('[Caption] Buffer too small: ${_audioBuffer.length} < $_bufferSize');
+      return;
+    }
+    
+    _isProcessing = true;
     
     try {
-      await _methodChannel.invokeMethod('processAudio', {'audio': audioData});
+      // Take samples from buffer
+      final samplesToProcess = Float32List.fromList(
+        _audioBuffer.take(_bufferSize).toList()
+      );
+      _audioBuffer.removeRange(0, _bufferSize);
+      
+      debugPrint('[Caption] Processing ${samplesToProcess.length} samples...');
+      
+      // Create stream and process
+      final stream = _recognizer!.createStream();
+      stream.acceptWaveform(samples: samplesToProcess, sampleRate: _sampleRate);
+      _recognizer!.decode(stream);
+      
+      final result = _recognizer!.getResult(stream);
+      final text = result.text.trim();
+      
+      stream.free();
+      
+      if (text.isNotEmpty && text != '<unk>' && text.length > 2) {
+        _currentText = text;
+        _partialText = '';
+        
+        _captionHistory.add(text);
+        if (_captionHistory.length > 5) {
+          _captionHistory.removeAt(0);
+        }
+        
+        // Clear after delay
+        _clearTimer?.cancel();
+        _clearTimer = Timer(const Duration(seconds: 6), () {
+          _currentText = '';
+          _partialText = '';
+          _setStatus('Ouvindo...');
+          notifyListeners();
+        });
+        
+        debugPrint('[Caption] TEXT: $text');
+        notifyListeners();
+      } else {
+        debugPrint('[Caption] No speech detected in chunk');
+      }
     } catch (e) {
       debugPrint('[Caption] Process error: $e');
+    } finally {
+      _isProcessing = false;
     }
+  }
+
+  /// Convert 16-bit PCM bytes to Float32 samples
+  Float32List _convertBytesToFloat32(Uint8List bytes) {
+    final shortCount = bytes.length ~/ 2;
+    final result = Float32List(shortCount);
+    
+    final byteData = ByteData.view(bytes.buffer);
+    for (int i = 0; i < shortCount; i++) {
+      final sample = byteData.getInt16(i * 2, Endian.little);
+      result[i] = sample / 32768.0;
+    }
+    
+    return result;
   }
 
   /// Stop captioning
   Future<void> stopCaptioning() async {
     if (!_isListening) return;
     
+    // Stop native audio capture
     try {
-      await _methodChannel.invokeMethod('stopRecognition');
-      
-      _isListening = false;
-      _currentText = '';
-      _partialText = '';
-      _setStatus('');
-      
-      notifyListeners();
-      debugPrint('[Caption] Stopped');
+      await _methodChannel.invokeMethod('stopCapture');
+      debugPrint('[Caption] Native audio capture stopped');
     } catch (e) {
-      debugPrint('[Caption] Stop error: $e');
+      debugPrint('[Caption] Error stopping capture: $e');
     }
+    
+    _audioSubscription?.cancel();
+    _audioSubscription = null;
+    _processTimer?.cancel();
+    _processTimer = null;
+    
+    _isListening = false;
+    _isProcessing = false;
+    _audioBuffer.clear();
+    _currentText = '';
+    _partialText = '';
+    _setStatus('');
+    _clearTimer?.cancel();
+    
+    notifyListeners();
+    debugPrint('[Caption] Stopped');
   }
 
   /// Reset the service
@@ -289,6 +365,7 @@ class StreamCaptionService extends ChangeNotifier {
     _currentText = '';
     _partialText = '';
     _captionHistory.clear();
+    _audioBuffer.clear();
     _clearTimer?.cancel();
     notifyListeners();
   }
@@ -301,8 +378,8 @@ class StreamCaptionService extends ChangeNotifier {
   @override
   void dispose() {
     stopCaptioning();
-    _eventSubscription?.cancel();
     _clearTimer?.cancel();
+    _recognizer?.free();
     super.dispose();
   }
 }

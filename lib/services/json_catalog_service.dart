@@ -68,8 +68,11 @@ class JsonCatalogService {
   /// Timeout para requisições HTTP
   static const Duration _httpTimeout = Duration(seconds: 30);
   
-  /// Tempo de cache local (7 dias)
-  static const Duration _localCacheTTL = Duration(days: 7);
+  /// Tempo de cache local (6 horas - atualiza frequentemente para pegar novos conteúdos)
+  static const Duration _localCacheTTL = Duration(hours: 6);
+  
+  /// Tempo para iniciar refresh em background (30 minutos)
+  static const Duration _backgroundRefreshAge = Duration(minutes: 30);
   
   static const int _maxCategoriesInMemory = 8;
 
@@ -317,8 +320,8 @@ class JsonCatalogService {
         final stat = await file.stat();
         final age = DateTime.now().difference(stat.modified);
         
-        // Se o cache tem mais de 1 dia, atualiza em background
-        if (age > const Duration(days: 1)) {
+        // Se o cache é mais antigo que _backgroundRefreshAge, atualiza em background
+        if (age > _backgroundRefreshAge) {
           debugPrint('🔄 Atualizando cache em background: $filename');
           await _loadFromNetwork(url, filename);
         }
@@ -433,6 +436,28 @@ class JsonCatalogService {
       debugPrint('Stack: $stack');
       return null;
     }
+  }
+
+  /// Força atualização de uma categoria (ignora cache)
+  Future<CategoryParseResult?> forceRefreshCategory(String categoryFile, {bool includeAdult = false}) async {
+    debugPrint('🔄 Forçando refresh: $categoryFile');
+    
+    // Remove do cache em memória
+    _categoryCache.remove(categoryFile);
+    _cacheOrder.remove(categoryFile);
+    
+    // Remove do cache local
+    await _initCacheDir();
+    if (_cacheDir != null) {
+      final file = File('${_cacheDir!.path}/$categoryFile');
+      if (await file.exists()) {
+        await file.delete();
+        debugPrint('🗑️ Cache local removido: $categoryFile');
+      }
+    }
+    
+    // Recarrega da rede
+    return await loadCategory(categoryFile, includeAdult: includeAdult);
   }
 
   /// Carrega todas as categorias (para busca global ou exibição completa)
