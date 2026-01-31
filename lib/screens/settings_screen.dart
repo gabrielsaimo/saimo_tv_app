@@ -64,7 +64,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       title: 'Sobre',
       icon: Icons.info_outline_rounded,
       items: [
-        _SettingItem(id: 'version', title: 'Versão 11.0.0', type: _ItemType.info),
+        _SettingItem(id: 'version', title: 'Versão 13.0.0', type: _ItemType.info),
       ],
     ),
   ];
