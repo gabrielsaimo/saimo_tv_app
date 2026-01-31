@@ -501,7 +501,8 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
        offset = 0;
     } else if (section == 3) {
        // Hero height + spacing
-       offset = MediaQuery.of(context).size.height * 0.45;
+       final screenH = MediaQuery.of(context).size.height;
+       offset = (screenH * 0.45) + 20;
     }
     _scrollController.animateTo(
       offset,
@@ -511,18 +512,43 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   }
   
   void _scrollToVerticalRow() {
-    // Calcula posição da linha
-    final heroH = MediaQuery.of(context).size.height * 0.45;
-    final rowH = 300.0; // 240 height + padding + title
-    
-    // Centraliza a linha na tela se possível
+    if (!_scrollController.hasClients) return;
+
     final screenH = MediaQuery.of(context).size.height;
-    final rowOffset = heroH + 20 + (_contentRow * rowH);
-    final centeredOffset = rowOffset - (screenH / 2) + (rowH / 2);
+    final screenCenter = screenH / 2;
+    const headerH = 56.0;
+    const filterH = 48.0;
     
+    double contentAreaTop = headerH + filterH;
+    double rowOffset = 0;
+
+    if (_section == 3) {
+      // Home (Rows)
+      final heroH = screenH * 0.45;
+      const rowHeight = 315.0; 
+      const centerInsideRow = 185.0; // 55 (title area) + 130 (half card)
+      
+      rowOffset = (heroH + 20.0) + (_contentRow * rowHeight) + centerInsideRow;
+    } else if (_section == 4) {
+      // Grid (Categories / Search / Favorites)
+      final rowHeight = _cardHeight + 12.0;
+      final centerInsideRow = _cardHeight / 2;
+      
+      // Se estiver em modo busca, tem um header extra de ~40px
+      if (_isSearchMode) {
+        contentAreaTop += 40.0;
+      }
+      
+      rowOffset = 10.0 + (_contentRow * rowHeight) + centerInsideRow;
+    }
+
+    // A mágica: alvo do scroll = posição do item - (ponto de centro da tela - início da área de conteúdo)
+    // Isso garante que o item fique no centro da tela física, não apenas da viewport.
+    final targetOffset = rowOffset - (screenCenter - contentAreaTop);
+
     _scrollController.animateTo(
-      centeredOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 300),
+      targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 150),
       curve: Curves.easeOutCubic,
     );
   }
@@ -531,9 +557,10 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
     final controller = _getCurrentRowController(provider);
     if (controller != null) {
-      _scrollToHorizontalIndex(controller, _contentCol, 160.0); // 130 + 30 margin
+      // largura do card 130 + margin horizontal 15+15 = 30
+      _scrollToHorizontalIndex(controller, _contentCol, 130.0, 30.0); 
     }
-    }
+  }
 
 
   
@@ -727,9 +754,17 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     await provider.performGlobalSearch(query);
     
     if (mounted) {
+      _resetNavigation();
+    }
+  }
+
+  void _resetNavigation() {
+    if (mounted) {
       setState(() {
         _contentRow = 0;
         _contentCol = 0;
+        _heroIndex = 0;
+        _headerIndex = 0;
       });
       if (_scrollController.hasClients) {
         _scrollController.jumpTo(0);
@@ -798,52 +833,8 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
 
 
-  void _scrollToRow() {
-    if (!_scrollController.hasClients) return;
-    
-    final screenH = MediaQuery.of(context).size.height;
-    final headerH = 56.0 + 48.0; // header + filtros
-    final contentH = screenH - headerH;
-    final padding = MediaQuery.of(context).size.width * 0.02;
-    
-    // Calcula altura correta do card baseado se é "Todos" (16:9) ou conteúdo (poster)
-    final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
-    final isTodos = provider.selectedCategoryName == 'Todos';
-    final aspectRatio = isTodos ? 16 / 9 : _cardWidth / _cardHeight;
-    final cardH = isTodos ? (_cardWidth / (16 / 9)) : _cardHeight;
-    final rowH = cardH + 10; // altura do card + spacing
-    
-    // Calcula posição do item focado
-    final focusedItemTop = padding + (_contentRow * rowH);
-    final focusedItemBottom = focusedItemTop + cardH;
-    
-    // Visão atual do scroll
-    final currentScrollTop = _scrollController.offset;
-    final currentScrollBottom = currentScrollTop + contentH;
-    
-    // Margem de segurança para garantir que o item está bem visível
-    const safeMargin = 20.0;
-    
-    double targetOffset = currentScrollTop;
-    
-    // Se o item está acima da área visível
-    if (focusedItemTop < currentScrollTop + safeMargin) {
-      targetOffset = focusedItemTop - safeMargin;
-    }
-    // Se o item está abaixo da área visível
-    else if (focusedItemBottom > currentScrollBottom - safeMargin) {
-      targetOffset = focusedItemBottom - contentH + safeMargin;
-    }
-    
-    // Aplica o scroll se necessário
-    if (targetOffset != currentScrollTop) {
-      _scrollController.animateTo(
-        targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOut,
-      );
-    }
-  }
+  // Consolidado em _scrollToVerticalRow
+
 
   void _showDetail(CatalogDisplayItem item) {
     // Se é série com GroupedSeries já disponível
@@ -903,6 +894,26 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
                   child: CircularProgressIndicator(color: Color(0xFFE50914)),
                 );
               }
+
+              // Responsive layout calculation
+              final width = MediaQuery.of(context).size.width;
+              if (width < 900) {
+                _columns = 4;
+              } else if (width < 1400) {
+                _columns = 6;
+              } else if (width < 2000) {
+                _columns = 7;
+              } else {
+                _columns = 9;
+              }
+              
+              // Base spacing and margins
+              final horizontalPadding = width * 0.04;
+              const gridSpacing = 12.0;
+              
+              // Calculate optimal card width
+              _cardWidth = (width - (horizontalPadding * 2) - ((_columns - 1) * gridSpacing)) / _columns;
+              _cardHeight = _cardWidth * 1.5;
               
               return Stack(
                 children: [
@@ -924,8 +935,10 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   }
 
   Widget _buildHeader(LazyMoviesProvider provider) {
-    return Container(
-      height: 56,
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
@@ -977,8 +990,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildFilters(LazyMoviesProvider provider) {
     // Se está no modo busca, mostra o campo de busca
@@ -1013,12 +1027,10 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
             isFocused: _section == 1 && _filterIndex == 1,
             isPink: true,
             onTap: () {
+              _resetNavigation();
               setState(() {
                 _showingFavorites = !_showingFavorites;
-                _contentRow = 0;
-                _contentCol = 0;
               });
-              _scrollController.jumpTo(0);
             },
           ),
           const SizedBox(width: 8),
@@ -1033,6 +1045,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
             isSelected: provider.filterType == MovieFilterType.all && !_showingFavorites,
             isFocused: _section == 1 && _filterIndex == 2,
             onTap: () {
+              _resetNavigation();
               setState(() => _showingFavorites = false);
               provider.setFilterType(MovieFilterType.all);
             },
@@ -1044,6 +1057,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
             isSelected: provider.filterType == MovieFilterType.movies && !_showingFavorites,
             isFocused: _section == 1 && _filterIndex == 3,
             onTap: () {
+              _resetNavigation();
               setState(() => _showingFavorites = false);
               provider.setFilterType(MovieFilterType.movies);
             },
@@ -1055,6 +1069,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
             isSelected: provider.filterType == MovieFilterType.series && !_showingFavorites,
             isFocused: _section == 1 && _filterIndex == 4,
             onTap: () {
+              _resetNavigation();
               setState(() => _showingFavorites = false);
               provider.setFilterType(MovieFilterType.series);
             },
@@ -1340,12 +1355,15 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
         Expanded(
           child: GridView.builder(
             controller: _scrollController,
-            padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
+            padding: EdgeInsets.symmetric(
+              horizontal: MediaQuery.of(context).size.width * 0.04,
+              vertical: 10,
+            ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: _columns,
               childAspectRatio: _cardWidth / _cardHeight,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
             ),
             itemCount: items.length,
             itemBuilder: (context, index) {
@@ -1419,12 +1437,15 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
         Expanded(
           child: GridView.builder(
             controller: _scrollController,
-            padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
+            padding: EdgeInsets.symmetric(
+              horizontal: MediaQuery.of(context).size.width * 0.04,
+              vertical: 10,
+            ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: _columns,
               childAspectRatio: _cardWidth / _cardHeight,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
             ),
             itemCount: favorites.length,
             itemBuilder: (context, index) {
@@ -1559,12 +1580,15 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
         Expanded(
           child: GridView.builder(
             controller: _scrollController,
-            padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
+            padding: EdgeInsets.symmetric(
+              horizontal: MediaQuery.of(context).size.width * 0.04,
+              vertical: 10,
+            ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: _columns,
               childAspectRatio: _cardWidth / _cardHeight,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
             ),
             itemCount: items.length,
             itemBuilder: (context, index) {
@@ -1591,7 +1615,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     final widgetList = <Widget>[];
     
     // 1. Hero Banner (Always shown if available)
-    widgetList.add(_buildHeroBanner());
+    widgetList.add(_buildHeroBanner(provider));
     widgetList.add(const SizedBox(height: 20));
     
     // 2. Rows
@@ -1636,6 +1660,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     return ListView(
       controller: _scrollController,
       padding: EdgeInsets.zero,
+      cacheExtent: 1000, // Pre-cache rows to avoid jank
       children: widgetList,
     );
   }
@@ -1646,8 +1671,16 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   // Método auxiliar para contar total de linhas disponíveis (usado na navegação)
   int _getTotalRows(LazyMoviesProvider provider) {
     int count = 0;
-    if (_trendingWeek.isNotEmpty) count++;
     
+    // Check Tendências Semana (using same filter as UI)
+    final filteredTrendingWeek = _trendingWeek.where((t) {
+      if (provider.filterType == MovieFilterType.movies) return !t.isSeries;
+      if (provider.filterType == MovieFilterType.series) return t.isSeries;
+      return true;
+    }).toList();
+    if (filteredTrendingWeek.isNotEmpty) count++;
+    
+    // Check Categories
     final categories = provider.availableCategories.where((c) => c != 'Todos');
     for (final cat in categories) {
        if (_getCategoryItems(provider, cat).isNotEmpty) count++;
@@ -1781,17 +1814,13 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
                     
                       return GestureDetector(
                         onTap: () {
+                          _resetNavigation();
                           provider.selectCategory(cat);
                           setState(() {
                             _showCategoryModal = false;
                             _showingFavorites = false; 
-                            _contentRow = 0;
-                            _contentCol = 0;
-                            // Reset section based on category type
-                            // Default to Filters (1) so user can filter or go down to content.
                             _section = 1; 
                           });
-                          _scrollController.jumpTo(0);
                         },
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -1876,12 +1905,21 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
   // === WIDGETS APPLE TV STYLE ===
   
-  Widget _buildHeroBanner() {
+  Widget _buildHeroBanner(LazyMoviesProvider provider) {
     if (_trendingToday.isEmpty) return const SizedBox.shrink();
 
     final width = MediaQuery.of(context).size.width;
     final itemWidth = width * 0.85; // Banner principal ocupa 85% da tela
     
+    // Filtra itens uma única vez fora do builder para performance
+    final filteredToday = _trendingToday.where((t) {
+      if (provider.filterType == MovieFilterType.movies) return !t.isSeries;
+      if (provider.filterType == MovieFilterType.series) return t.isSeries;
+      return true;
+    }).toList();
+
+    if (filteredToday.isEmpty) return const SizedBox.shrink();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1890,25 +1928,11 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           child: ListView.builder(
             controller: _heroScrollController,
             scrollDirection: Axis.horizontal,
-            itemCount: _trendingToday.where((t) {
-               final provider = context.watch<LazyMoviesProvider>();
-               if (provider.filterType == MovieFilterType.movies) return !t.isSeries;
-               if (provider.filterType == MovieFilterType.series) return t.isSeries;
-               return true;
-            }).length,
+            itemCount: filteredToday.length,
             // Importante: padding para centralizar visualmente o primeiro item (opcional)
             padding: EdgeInsets.symmetric(horizontal: (width - itemWidth) / 2),
             physics: const ClampingScrollPhysics(), 
             itemBuilder: (context, index) {
-               final provider = context.watch<LazyMoviesProvider>();
-               final filteredToday = _trendingToday.where((t) {
-                  if (provider.filterType == MovieFilterType.movies) return !t.isSeries;
-                  if (provider.filterType == MovieFilterType.series) return t.isSeries;
-                  return true;
-               }).toList();
-               
-               if (index >= filteredToday.length) return const SizedBox.shrink();
-               
                final item = filteredToday[index];
                final isFocused = _section == 2 && _heroIndex == index;
                
@@ -2098,7 +2122,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
           ),
         ),
         SizedBox(
-          height: 240, // Altura fixa suficiente para scale
+          height: 260, // Aumentado de 240 para 260 para acomodar scale e metadata sem cortar
           child: ListView.builder(
             controller: _getRowController(title),
             scrollDirection: Axis.horizontal,
@@ -2131,18 +2155,19 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     );
   }
   
-  void _scrollToHorizontalIndex(ScrollController controller, int index, double itemWidth) {
+  void _scrollToHorizontalIndex(ScrollController controller, int index, double itemWidth, double spacing) {
     if (!controller.hasClients) return;
     
     final screenW = MediaQuery.of(context).size.width;
-    final center = screenW / 2;
-    final paddingLeft = 40.0;
-    final itemCenter = (index * itemWidth) + (itemWidth / 2);
-    final offset = itemCenter + paddingLeft - center;
+    final itemFullWidth = itemWidth + spacing;
+    
+    // Alvo: (posição do item + metade do item) - metade da tela
+    // Isso coloca o CENTRO do item no CENTRO da tela.
+    final targetOffset = (index * itemFullWidth) + (itemFullWidth / 2) - (screenW / 2);
     
     controller.animateTo(
-      offset.clamp(0.0, controller.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 300),
+      targetOffset.clamp(0.0, controller.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 250),
       curve: Curves.easeOutCubic,
     );
   }

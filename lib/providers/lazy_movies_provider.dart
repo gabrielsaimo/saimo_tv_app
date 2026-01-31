@@ -54,6 +54,11 @@ class LazyMoviesProvider with ChangeNotifier {
   List<Movie> _globalSearchSeries = [];
   bool _hasGlobalResults = false;
   
+  // === Cache Permanente para "Todos" (Home) ===
+  List<Movie> _cachedTodosMovies = [];
+  List<Movie> _cachedTodosSeries = [];
+  bool _hasCachedTodos = false;
+
   // === Paginação ===
   static const int _pageSize = 30;
   int _currentPage = 0;
@@ -631,7 +636,17 @@ class LazyMoviesProvider with ChangeNotifier {
   /// Seleciona uma categoria pelo nome
   /// Se [forceReload] for true, recarrega mesmo se já estiver selecionada
   Future<void> selectCategory(String categoryName, {bool forceReload = false}) async {
-    // Para 'Todos', verifica se já tem dados carregados
+    // Para 'Todos', verifica se já tem dados carregados no cache permanente
+    if (categoryName == 'Todos' && _hasCachedTodos && !forceReload) {
+      _selectedCategoryName = 'Todos';
+      _selectedCategoryId = null;
+      _currentCategoryData = null;
+      _loadedMovies = List.from(_cachedTodosMovies);
+      _loadedSeries = List.from(_cachedTodosSeries);
+      notifyListeners();
+      return;
+    }
+
     if (!forceReload && categoryName == _selectedCategoryName) {
       if (categoryName == 'Todos' && _loadedMovies.isNotEmpty) {
         return;
@@ -769,8 +784,8 @@ class LazyMoviesProvider with ChangeNotifier {
       // Limita o total de linhas para não pesar (máx 20 categorias)
       final categoriesToLoad = streamingCategories.take(20).toList();
       
-      // Carrega 10 itens de cada categoria selecionada
-      for (final cat in categoriesToLoad) {
+      // Carrega 10 itens de cada categoria selecionada em PARALELO
+      final List<Future<void>> loadTasks = categoriesToLoad.map((cat) async {
         try {
           final data = await _service.loadCategory(cat.id);
           if (data != null) {
@@ -785,20 +800,27 @@ class LazyMoviesProvider with ChangeNotifier {
                 .take(10)
                 .toList();
             
-            // Marca a categoria correta em cada item
-            for (final movie in movies) {
-              _loadedMovies.add(movie.copyWith(category: cat.name));
-            }
-            // Verifica os tipos
+            // Marca a categoria correta em cada item e adiciona
+            final mappedMovies = movies.map((m) => m.copyWith(category: cat.name)).toList();
+            final mappedSeries = series.map((s) => s.copyWith(category: cat.name)).toList();
+            
+            _loadedMovies.addAll(mappedMovies);
+            _loadedSeries.addAll(mappedSeries);
             if (movies.isNotEmpty) _categoryContentTypes.putIfAbsent(cat.name, () => {}).add('movies');
             if (series.isNotEmpty) _categoryContentTypes.putIfAbsent(cat.name, () => {}).add('series');
-            for (final episode in series) {
-              _loadedSeries.add(episode.copyWith(category: cat.name));
-            }
           }
         } catch (e) {
           debugPrint('⚠️ Erro ao carregar amostra de ${cat.name}: $e');
         }
+      }).toList();
+
+      await Future.wait(loadTasks);
+      
+      // Salva no cache permanente se for a primeira vez
+      if (!_hasCachedTodos) {
+        _cachedTodosMovies = List.from(_loadedMovies);
+        _cachedTodosSeries = List.from(_loadedSeries);
+        _hasCachedTodos = true;
       }
       
       debugPrint('📂 Todos (Streaming): ${_loadedMovies.length} filmes, ${_loadedSeries.length} séries de ${streamingCategories.length} categorias');
