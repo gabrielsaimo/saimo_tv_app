@@ -141,36 +141,16 @@ class LazyMoviesProvider with ChangeNotifier {
         }
       }
       
-      // Filtra por tipo de conteúdo se temos cache
+      // FIX: Don't filter by type if we don't have cache yet to avoid false positives
+      // Only filter if we are SURE about the content type
       if (_categoryContentTypes.containsKey(c.name)) {
         final types = _categoryContentTypes[c.name]!;
-        if (_filterType == MovieFilterType.movies && !types.contains('movies')) {
-          return false;
+        // Use loose matching: if filter is movies, show if NOT ONLY series
+        if (_filterType == MovieFilterType.movies && types.contains('series') && !types.contains('movies')) {
+           return false;
         }
-        if (_filterType == MovieFilterType.series && !types.contains('series')) {
-          return false;
-        }
-      } else {
-        // Se não temos cache, usa heurística pelo nome da categoria
-        final nameLower = c.name.toLowerCase();
-        final isSeries = nameLower.contains('novela') ||
-                         nameLower.contains('dorama') ||
-                         nameLower.contains('anime') ||
-                         nameLower.contains('série') ||
-                         nameLower.contains('series') ||
-                         nameLower.contains('📺');
-        final isMovies = nameLower.contains('filme') ||
-                         nameLower.contains('movie') ||
-                         nameLower.contains('lançamento') ||
-                         nameLower.contains('🎬');
-        
-        // Se filtro é filmes e parece ser só séries, esconde
-        if (_filterType == MovieFilterType.movies && isSeries && !isMovies) {
-          return false;
-        }
-        // Se filtro é séries e parece ser só filmes, esconde
-        if (_filterType == MovieFilterType.series && isMovies && !isSeries) {
-          return false;
+        if (_filterType == MovieFilterType.series && types.contains('movies') && !types.contains('series')) {
+           return false;
         }
       }
       
@@ -227,7 +207,7 @@ class LazyMoviesProvider with ChangeNotifier {
     
     // Filtra adulto
     if (!_showAdultContent) {
-      movies = movies.where((m) => !m.isAdult).toList();
+      movies = movies.where((m) => !m.isAdult && m.type != MovieType.channel).toList();
     }
     
     return movies;
@@ -267,7 +247,7 @@ class LazyMoviesProvider with ChangeNotifier {
       
       // Filtra adulto
       if (!_showAdultContent) {
-        movies = movies.where((m) => !m.isAdult).toList();
+        movies = movies.where((m) => !m.isAdult && m.type != MovieType.channel).toList();
       }
       
       // Aplica filtros avançados
@@ -742,41 +722,76 @@ class LazyMoviesProvider with ChangeNotifier {
 
     try {
       // Filtra APENAS categorias de streaming (não adultas)
-      final streamingCategories = _categories
+      // 1. Tenta identificar categorias de streaming
+      var streamingCategories = _categories
           .where((c) => _streamingCategoryIds.contains(c.id))
-          .where((c) => !c.isAdult) // NUNCA mostra categorias adultas em Todos
+          .where((c) => !c.isAdult)
           .toList();
       
-      // Ordena por ordem preferencial
+      // 2. Se tiver poucas categorias de streaming (< 5), completa com outras categorias populares
+      if (streamingCategories.length < 5) {
+        final otherCategories = _categories
+            .where((c) => !_streamingCategoryIds.contains(c.id))
+            .where((c) => !c.isAdult)
+            .where((c) => !c.name.toLowerCase().contains('coleção'))
+            .take(15) // Pega mais 15 categorias genéricas
+            .toList();
+            
+        streamingCategories.addAll(otherCategories);
+      } else {
+        // Se já tem bastante streaming, pega só mais algumas genéricas para diversidade
+        final otherCategories = _categories
+             .where((c) => !_streamingCategoryIds.contains(c.id))
+             .where((c) => !c.isAdult)
+             .where((c) => !c.name.toLowerCase().contains('coleção'))
+             .take(5)
+             .toList();
+        streamingCategories.addAll(otherCategories);
+      }
+      
+      // Remove duplicatas
+      final seenIds = <String>{};
+      streamingCategories.retainWhere((c) => seenIds.add(c.id));
+      
+      // Ordena: Streaming primeiro (na ordem de ID), depois outros
       streamingCategories.sort((a, b) {
         final indexA = _streamingCategoryIds.indexOf(a.id);
         final indexB = _streamingCategoryIds.indexOf(b.id);
+        
         if (indexA != -1 && indexB != -1) return indexA.compareTo(indexB);
         if (indexA != -1) return -1;
         if (indexB != -1) return 1;
-        return a.name.compareTo(b.name);
+        
+        // Se não for streaming, ordena por contagem (maiores primeiro) ou nome
+        return b.count.compareTo(a.count);
       });
       
-      // Carrega 5 itens de cada categoria de streaming
-      for (final cat in streamingCategories) {
+      // Limita o total de linhas para não pesar (máx 20 categorias)
+      final categoriesToLoad = streamingCategories.take(20).toList();
+      
+      // Carrega 10 itens de cada categoria selecionada
+      for (final cat in categoriesToLoad) {
         try {
           final data = await _service.loadCategory(cat.id);
           if (data != null) {
-            // Pega até 5 filmes de cada categoria (FILTRA ADULTO)
+            // Pega até 10 filmes de cada categoria (FILTRA ADULTO)
             final movies = data.movies
                 .where((m) => !m.isAdult) // NUNCA mostra conteúdo adulto em Todos
-                .take(5)
+                .take(10)
                 .toList();
-            // Pega até 5 séries (episódios) de cada categoria (FILTRA ADULTO)
+            // Pega até 10 séries (episódios) de cada categoria (FILTRA ADULTO)
             final series = data.series
                 .where((s) => !s.isAdult) // NUNCA mostra conteúdo adulto em Todos  
-                .take(5)
+                .take(10)
                 .toList();
             
             // Marca a categoria correta em cada item
             for (final movie in movies) {
               _loadedMovies.add(movie.copyWith(category: cat.name));
             }
+            // Verifica os tipos
+            if (movies.isNotEmpty) _categoryContentTypes.putIfAbsent(cat.name, () => {}).add('movies');
+            if (series.isNotEmpty) _categoryContentTypes.putIfAbsent(cat.name, () => {}).add('series');
             for (final episode in series) {
               _loadedSeries.add(episode.copyWith(category: cat.name));
             }

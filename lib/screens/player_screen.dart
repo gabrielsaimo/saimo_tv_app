@@ -24,7 +24,6 @@ import '../services/casting_service.dart';
 import '../widgets/options_modal.dart';
 import '../widgets/custom_video_player.dart';
 import '../providers/settings_provider.dart';
-import '../services/stream_caption_service.dart';
 
 /// Tela do Player de Vídeo
 class PlayerScreen extends StatefulWidget {
@@ -262,7 +261,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _channelListController.dispose();
     _programsListController.dispose();
     _mainFocusNode.dispose();
-    StreamCaptionService().stopCaptioning();
     super.dispose();
   }
   
@@ -348,9 +346,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       _activeController?.dispose();
       _activeController = null;
       
-      // Reset caption service when changing channels
-      StreamCaptionService().reset();
-      
       // Validação da URL
       var url = channel.url.trim();
       if (url.isEmpty) {
@@ -383,32 +378,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       epgProvider.loadChannelEPG(channel.id);
 
       setState(() => _isBuffering = false);
-      
-      if (mounted) {
-         final settings = context.read<SettingsProvider>();
-         if (settings.enableSubtitles) {
-            // Inicia serviço de auto-legenda via stream (FFmpeg -> Vosk)
-            // Passa a URL final resolvida (ou a original se não houve redirect)
-            StreamCaptionService().startCaptioning(url);
-
-            ScaffoldMessenger.of(context).clearSnackBars();
-            ScaffoldMessenger.of(context).showSnackBar(
-               SnackBar(
-                 content: Row(
-                   children: const [
-                     Icon(Icons.closed_caption, color: Colors.white),
-                     SizedBox(width: 8),
-                     Text('CC Ativado (Se disponível no canal)'),
-                   ],
-                 ),
-                 backgroundColor: Colors.black.withOpacity(0.8),
-                 behavior: SnackBarBehavior.floating,
-                 margin: const EdgeInsets.all(16),
-                 duration: const Duration(seconds: 4),
-               ),
-            );
-         }
-      }
 
     } catch (e) {
       setState(() {

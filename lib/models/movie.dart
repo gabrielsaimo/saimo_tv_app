@@ -489,12 +489,15 @@ class Episode {
 /// Tipo do conteúdo
 enum MovieType {
   movie,
-  series;
+  series,
+  channel;
 
   static MovieType fromString(String value) {
     switch (value.toLowerCase()) {
       case 'series':
         return MovieType.series;
+      case 'channel':
+        return MovieType.channel;
       default:
         return MovieType.movie;
     }

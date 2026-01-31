@@ -11,6 +11,7 @@ import '../widgets/series_modal_optimized.dart';
 import '../widgets/advanced_filters_modal.dart';
 import '../services/trending_service.dart';
 import '../services/json_lazy_service.dart';
+import 'dart:ui' as ui;
 import '../utils/tv_constants.dart';
 import '../utils/key_debouncer.dart';
 
@@ -68,6 +69,33 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   int _columns = 6;
   double _cardWidth = 140;
   double _cardHeight = 210;
+  
+  // === APPLE TV LAYOUT ===
+  int _heroIndex = 0;
+  final ScrollController _heroScrollController = ScrollController();
+  final Map<String, ScrollController> _rowControllers = {};
+  
+  ScrollController _getRowController(String key) {
+    if (!_rowControllers.containsKey(key)) {
+      _rowControllers[key] = ScrollController();
+    }
+    return _rowControllers[key]!;
+  }
+  
+  List<CatalogDisplayItem> _getCategoryItems(LazyMoviesProvider provider, String category) {
+    // Para 'Todos', não listamos itens aqui (seria redundante).
+    // Mas se precisarmos, podemos filtrar.
+    if (category == 'Todos') return [];
+    
+    // Filtra itens da categoria
+    return provider.displayItems
+        .where((item) => 
+            (item.movie?.category == category) || 
+            (item.series?.category == category)
+        )
+        .take(10) // Limita a 10 items
+        .toList();
+  }
 
   @override
   void initState() {
@@ -83,9 +111,13 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
     await provider.initialize();
     // Inicia com a categoria já selecionada no provider (persistência)
+    // Inicia com a categoria já selecionada no provider (persistência)
     if (provider.selectedCategoryName == 'Todos') {
-       // Se for primeira vez ou realmente Todos, ok.
-       // O importante é não forçar 'Todos' se o user já tinha selecionado outra coisa.
+       // FIX: Se for 'Todos' mas não tiver nada carregado (ou só tiver carregado lixo),
+       // força o carregamento das categorias de novo.
+       if (provider.displayItems.isEmpty) {
+          await provider.selectCategory('Todos', forceReload: true);
+       }
     }
     
     // Carrega tendências do TMDB em paralelo
@@ -141,6 +173,10 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     _searchDebounce?.cancel();
     _trendingTodayScroll.dispose();
     _trendingWeekScroll.dispose();
+    _heroScrollController.dispose();
+    for (final c in _rowControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -163,6 +199,21 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
         _focusNode.requestFocus();
         return KeyEventResult.handled;
       }
+      
+      // FIX: Permite sair do input com setas laterais
+      if (key == LogicalKeyboardKey.arrowRight) {
+        _searchFocusNode.unfocus();
+        setState(() => _filterIndex = 2); // Search Button
+        _focusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowLeft) {
+        _searchFocusNode.unfocus();
+        setState(() => _filterIndex = 0); // Close Button
+        _focusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+
       // Deixa o TextField processar outras teclas
       return KeyEventResult.ignored;
     }
@@ -250,48 +301,36 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   }
 
   void _onUp() {
-    final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
-    // Pula tendências em qualquer tela que NÃO seja a categoria específica de Tendências
-    final skipTrending = provider.selectedCategoryName != '📊 Tendências' || _showingFavorites || _isSearchMode;
-    
     setState(() {
       if (_section == 4) {
-        // Na grid de categorias/conteúdo
+        // Grid (Favoritos / Busca / Categoria Simples)
         if (_contentRow > 0) {
           _contentRow--;
-          _scrollToRow();
+          _scrollToVerticalRow();
         } else {
-          // Se deve pular tendências, vai direto para filtros
-          if (skipTrending) {
-            _section = 1;
-            _scrollController.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
-          } else {
-            // Sobe para tendências da semana (se existir) ou de hoje
-            if (_trendingWeek.isNotEmpty) {
-              _section = 3;
-              _scrollToMainSection(3);
-            } else if (_trendingToday.isNotEmpty) {
-              _section = 2;
-              _scrollToMainSection(2);
-            } else {
-              _section = 1;
-              _scrollController.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
-            }
-          }
+          // Sobe para Filtros
+          _section = 1;
+          _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
         }
       } else if (_section == 3) {
-        // Na seção de tendências da semana
-        if (_trendingToday.isNotEmpty) {
-          _section = 2;
-          _scrollToMainSection(2);
+        // Nas linhas de categoria
+        if (_contentRow > 0) {
+          _contentRow--;
+          _scrollToVerticalRow();
         } else {
-          _section = 1;
-          _scrollController.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+          // Sobe para o Hero Banner
+          if (_trendingToday.isNotEmpty) {
+            _section = 2;
+            _scrollToMainSection(2);
+          } else {
+            _section = 1;
+            _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+          }
         }
       } else if (_section == 2) {
-        // Na seção de tendências de hoje
+        // No Hero Banner, sobe para Filtros
         _section = 1;
-        _scrollController.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+        _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
       } else if (_section == 1) {
         _section = 0;
       }
@@ -300,113 +339,105 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
   void _onDown() {
     final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
-    // Pula tendências em qualquer tela que NÃO seja a categoria específica de Tendências
-    final skipTrending = provider.selectedCategoryName != '📊 Tendências' || _showingFavorites || _isSearchMode;
-    
-    // Determina o número de itens baseado no modo atual
-    int itemCount;
-    if (_showingFavorites) {
-      final favProvider = Provider.of<MovieFavoritesProvider>(context, listen: false);
-      itemCount = favProvider.count;
-    } else if (provider.selectedCategoryName == 'Todos') {
-      itemCount = provider.availableCategories.length - 1; // Exclui "Todos"
-    } else {
-      // Tendências AGORA tem grid, então usa displayItems normalmente
-      itemCount = provider.displayItems.length;
-    }
-    final rows = (itemCount / _columns).ceil();
+    final totalRows = _getTotalRows(provider);
     
     setState(() {
       if (_section == 0) {
         _section = 1;
       } else if (_section == 1) {
-        // Se deve pular tendências, vai para conteúdo/categorias
-        if (skipTrending) {
-          _section = 4;
+        // De filtros para:
+        // - Grid (se for categoria simples / busca / favoritos)
+        final isGrid = _isSearchMode || _showingFavorites || !['Todos', '📊 Tendências'].contains(provider.selectedCategoryName);
+        
+        if (isGrid) {
+           _section = 4;
+           _contentRow = 0;
+           _contentCol = 0;
+           return;
+        }
+
+        // - Hero ou Rows (se for Todos/Tendências)
+        if (_trendingToday.isNotEmpty) {
+          _section = 2;
+          _heroIndex = 0;
+          _scrollToMainSection(2);
+        } else if (totalRows > 0) {
+          _section = 3;
           _contentRow = 0;
           _contentCol = 0;
-          _scrollToRow();
-        } else {
-          // Desce para tendências de hoje (se existir)
-          if (_trendingToday.isNotEmpty) {
-            _section = 2;
-            _trendingTodayIndex = 0;
-            _scrollToMainSection(2);
-          } else if (_trendingWeek.isNotEmpty) {
-            _section = 3;
-            _trendingWeekIndex = 0;
-            _scrollToMainSection(3);
-          } else {
-            // Se não tem tendências, vai para o grid
-            _section = 4;
-            _contentRow = 0;
-            _contentCol = 0;
-            _scrollToRow();
-          }
+          _scrollToMainSection(3);
         }
       } else if (_section == 2) {
-        // De tendências de hoje para tendências da semana ou grid
-        if (_trendingWeek.isNotEmpty) {
+        // De Hero para Rows
+        if (totalRows > 0) {
           _section = 3;
-          _trendingWeekIndex = 0;
-          _scrollToMainSection(3);
-        } else {
-          // Vai para o grid
-          _section = 4;
           _contentRow = 0;
           _contentCol = 0;
-          _scrollToRow();
+          _scrollToMainSection(3);
         }
       } else if (_section == 3) {
-        // De tendências da semana para o grid
-        _section = 4;
-        _contentRow = 0;
-        _contentCol = 0;
-        _scrollToRow();
-      } else if (_section == 4 && _contentRow < rows - 1) {
-        _contentRow++;
-        _scrollToRow();
+        // Navega entre linhas
+        if (_contentRow < totalRows - 1) {
+          _contentRow++;
+          _contentCol = 0; // Reset col ao mudar de linha
+          _scrollToVerticalRow();
+        }
+      } else if (_section == 4) {
+        // Grid Navigation
+        final items = provider.displayItems;
+        final totalGridRows = (items.length / _columns).ceil();
+        if (_contentRow < totalGridRows - 1) {
+          _contentRow++;
+          _scrollToVerticalRow();
+        }
       }
     });
   }
-
+  
   void _onLeft() {
-    final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
-    
     setState(() {
       if (_section == 0) {
         if (_headerIndex > 0) _headerIndex--;
       } else if (_section == 1) {
-        if (_filterIndex > 0) {
-          _filterIndex--;
+        if (_isSearchMode) {
+          // 0: Close, 1: TextField, 2: Search Button
+          if (_filterIndex > 0) _filterIndex--;
+          
+          // Manage Focus
+          if (_filterIndex == 1) {
+            _searchFocusNode.requestFocus();
+          } else {
+            _searchFocusNode.unfocus();
+          }
         } else {
-          _openCategoryModal(provider);
+          if (_filterIndex > 0) {
+             _filterIndex--;
+          } else {
+             _openCategoryModal(Provider.of<LazyMoviesProvider>(context, listen: false));
+          }
         }
       } else if (_section == 2) {
-        // Tendências de hoje
-        if (_trendingTodayIndex > 0) {
-          _trendingTodayIndex--;
-          _scrollTrendingToday();
+        // Hero Banner
+        if (_heroIndex > 0) {
+          _heroIndex--;
+          _scrollTrendingToday(); // Usa método corrigido com width 85%
         } else {
-          _openCategoryModal(provider);
+          _openCategoryModal(Provider.of<LazyMoviesProvider>(context, listen: false));
         }
       } else if (_section == 3) {
-        // Tendências da semana
-        if (_trendingWeekIndex > 0) {
-          _trendingWeekIndex--;
-          _scrollTrendingWeek();
-        } else {
-          _openCategoryModal(provider);
-        }
-      } else if (_section == 4) {
+        // Category Rows
         if (_contentCol > 0) {
           _contentCol--;
-        } else if (_contentRow > 0) {
-          _contentRow--;
-          _contentCol = _columns - 1;
-          _scrollToRow();
+          _scrollCurrentRowHorizontal();
         } else {
-          _openCategoryModal(provider);
+          _openCategoryModal(Provider.of<LazyMoviesProvider>(context, listen: false));
+        }
+      } else if (_section == 4) {
+        // Grid
+        if (_contentCol > 0) {
+          _contentCol--;
+        } else {
+          _openCategoryModal(Provider.of<LazyMoviesProvider>(context, listen: false));
         }
       }
     });
@@ -415,56 +446,115 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   void _onRight() {
     final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
     
-    // Determina o número de itens baseado no modo atual
-    int itemCount;
-    if (_showingFavorites) {
-      final favProvider = Provider.of<MovieFavoritesProvider>(context, listen: false);
-      itemCount = favProvider.count;
-    } else if (provider.selectedCategoryName == 'Todos') {
-      itemCount = provider.availableCategories.length - 1;
-    } else {
-      itemCount = provider.displayItems.length;
-    }
-    
     setState(() {
       if (_section == 0) {
         if (_headerIndex < 2) _headerIndex++;
       } else if (_section == 1) {
-        if (_filterIndex < 6) _filterIndex++; // Agora vai até 6 (buscar)
+        if (_isSearchMode) {
+           // 0: Close, 1: TextField, 2: Search Button
+           if (_filterIndex < 2) _filterIndex++;
+           
+           // Manage Focus
+           if (_filterIndex == 1) {
+             _searchFocusNode.requestFocus();
+           } else {
+             _searchFocusNode.unfocus();
+           }
+        } else {
+          if (_filterIndex < 6) _filterIndex++;
+        }
       } else if (_section == 2) {
-        // Tendências de hoje
-        if (_trendingTodayIndex < _trendingToday.length - 1) {
-          _trendingTodayIndex++;
-          _scrollTrendingToday();
+        // Hero Banner
+        // Need to filter trending today for boundary check
+        final filteredToday = _trendingToday.where((t) {
+            if (provider.filterType == MovieFilterType.movies) return !t.isSeries;
+            if (provider.filterType == MovieFilterType.series) return t.isSeries;
+            return true;
+        }).toList();
+        
+        if (_heroIndex < filteredToday.length - 1) {
+          _heroIndex++;
+          _scrollTrendingToday(); 
         }
       } else if (_section == 3) {
-        // Tendências da semana
-        if (_trendingWeekIndex < _trendingWeek.length - 1) {
-          _trendingWeekIndex++;
-          _scrollTrendingWeek();
+        // Category Rows
+        final items = _getCurrentRowItems(provider);
+        if (_contentCol < items.length - 1) {
+          _contentCol++;
+          _scrollCurrentRowHorizontal();
         }
       } else if (_section == 4) {
-        final idx = _contentRow * _columns + _contentCol;
-        if (idx < itemCount - 1) {
-          if (_contentCol < _columns - 1) {
-            _contentCol++;
-          } else {
-            _contentRow++;
-            _contentCol = 0;
-            _scrollToRow();
-          }
+        // Grid
+        final items = provider.displayItems;
+        // Check if next item exists
+        final nextIndex = (_contentRow * _columns) + _contentCol + 1;
+        if (_contentCol < _columns - 1 && nextIndex < items.length) {
+          _contentCol++;
         }
       }
     });
   }
   
+  void _scrollToMainSection(int section) {
+    double offset = 0;
+    if (section == 2) {
+       offset = 0;
+    } else if (section == 3) {
+       // Hero height + spacing
+       offset = MediaQuery.of(context).size.height * 0.45;
+    }
+    _scrollController.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic
+    );
+  }
+  
+  void _scrollToVerticalRow() {
+    // Calcula posição da linha
+    final heroH = MediaQuery.of(context).size.height * 0.45;
+    final rowH = 300.0; // 240 height + padding + title
+    
+    // Centraliza a linha na tela se possível
+    final screenH = MediaQuery.of(context).size.height;
+    final rowOffset = heroH + 20 + (_contentRow * rowH);
+    final centeredOffset = rowOffset - (screenH / 2) + (rowH / 2);
+    
+    _scrollController.animateTo(
+      centeredOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
+  }
+  
+  void _scrollCurrentRowHorizontal() {
+    final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
+    final controller = _getCurrentRowController(provider);
+    if (controller != null) {
+      _scrollToHorizontalIndex(controller, _contentCol, 160.0); // 130 + 30 margin
+    }
+    }
+
+
+  
   void _scrollTrendingToday() {
-    if (!_trendingTodayScroll.hasClients) return;
-    final offset = _trendingTodayIndex * (_cardWidth + 12);
-    _trendingTodayScroll.animateTo(
-      offset.clamp(0.0, _trendingTodayScroll.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeOut,
+    if (!_heroScrollController.hasClients) return;
+    
+    // Calcula a largura do item do Hero Banner (85% da tela)
+    final width = MediaQuery.of(context).size.width;
+    final itemWidth = (width * 0.85); // Item width (85%)
+    
+    // The items are laid out with paddingLeft = (width - itemWidth) / 2.
+    // Item 0 is at padded start.
+    // Item N starts at paddingLeft + N * (itemWidth + 20).
+    // The +20 comes from symmetric margin(10) on each item.
+    
+    final scrollOffset = _heroIndex * (itemWidth + 20);
+    
+    _heroScrollController.animateTo(
+      scrollOffset.clamp(0.0, _heroScrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
     );
   }
   
@@ -487,93 +577,101 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       } else if (_headerIndex == 1) {
         Navigator.of(context).pushReplacementNamed('/channels');
       } else {
+
         Navigator.of(context).pushNamed('/settings');
       }
     } else if (_section == 1) {
-      if (_filterIndex == 0) {
-        _openCategoryModal(provider);
-      } else if (_filterIndex == 1) {
-        // Botão Favoritos
-        setState(() {
-          _showingFavorites = !_showingFavorites;
-          _contentRow = 0;
-          _contentCol = 0;
-        });
-        _scrollController.jumpTo(0);
-      } else if (_filterIndex == 5) {
-        // Botão Filtros Avançados
-        _openAdvancedFilters(provider);
-      } else if (_filterIndex == 6) {
-        // Botão Buscar
-        _openSearch();
+      if (_isSearchMode) {
+        // Navegação especial para Search Bar
+        // 0: Close, 1: TextField, 2: Search Button
+        if (_filterIndex == 0) {
+          _closeSearch();
+        } else if (_filterIndex == 2) {
+          _submitSearch();
+        }
       } else {
-        // Filtros de tipo (2=todos, 3=filmes, 4=séries)
-        final filters = [MovieFilterType.all, MovieFilterType.movies, MovieFilterType.series];
-        final newFilter = filters[_filterIndex - 2];
-        if (provider.filterType != newFilter) {
-          provider.setFilterType(newFilter);
-          _contentRow = 0;
-          _contentCol = 0;
+        if (_filterIndex == 0) {
+          _openCategoryModal(provider);
+        } else if (_filterIndex == 1) {
+          // Botão Favoritos
+          setState(() {
+            _showingFavorites = !_showingFavorites;
+            _contentRow = 0;
+            _contentCol = 0;
+          });
           _scrollController.jumpTo(0);
+        } else if (_filterIndex == 5) {
+          // Botão Filtros Avançados
+          _openAdvancedFilters(provider);
+        } else if (_filterIndex == 6) {
+          // Botão Buscar
+          _openSearch();
+        } else {
+          // Filtros de tipo (2=todos, 3=filmes, 4=séries)
+          final filters = [MovieFilterType.all, MovieFilterType.movies, MovieFilterType.series];
+          final newFilter = filters[_filterIndex - 2];
+          if (provider.filterType != newFilter) {
+            provider.setFilterType(newFilter);
+            _contentRow = 0;
+            _contentCol = 0;
+            _scrollController.jumpTo(0);
+          }
         }
       }
     } else if (_section == 2) {
-      // Tendências de hoje
-      if (_trendingTodayIndex < _trendingToday.length) {
-        _showTrendingDetail(_trendingToday[_trendingTodayIndex]);
+      // Tendências de hoje (Hero Banner)
+      final provider = Provider.of<LazyMoviesProvider>(context, listen: false);
+      final filteredToday = _trendingToday.where((t) {
+        if (provider.filterType == MovieFilterType.movies) return !t.isSeries;
+        if (provider.filterType == MovieFilterType.series) return t.isSeries;
+        return true;
+      }).toList();
+      
+      if (_heroIndex < filteredToday.length) {
+        _showDetail(CatalogDisplayItem(
+          type: filteredToday[_heroIndex].isSeries ? DisplayItemType.series : DisplayItemType.movie,
+          movie: filteredToday[_heroIndex].localMovie,
+        ));
       }
-    } else if (_section == 3) {
-      // Tendências da semana
-      if (_trendingWeekIndex < _trendingWeek.length) {
-        _showTrendingDetail(_trendingWeek[_trendingWeekIndex]);
-      }
-    } else if (_section == 4) {
-      if (_showingFavorites) {
-        // Está mostrando favoritos - abre detalhe do filme/série favorito
-        final favProvider = context.read<MovieFavoritesProvider>();
-        final favorites = favProvider.favorites;
-        final idx = _contentRow * _columns + _contentCol;
-        if (idx < favorites.length) {
-          final movie = favorites[idx];
-          // Verifica se é série com episódios
-          if (movie.type == MovieType.series && movie.episodes != null && movie.episodes!.isNotEmpty) {
-            // Cria GroupedSeries a partir do Movie
-            final groupedSeries = _createGroupedSeriesFromMovie(movie);
-            showDialog(
-              context: context,
-              barrierColor: Colors.black87,
-              builder: (_) => SeriesModalOptimized(series: groupedSeries),
-            );
-          } else {
-            showDialog(
-              context: context,
-              barrierColor: Colors.black87,
-              builder: (_) => MovieDetailModal(movie: movie),
-            );
+      } else if (_section == 3) {
+        // Category Rows selection
+        final items = _getCurrentRowItems(provider);
+        if (_contentCol < items.length) {
+          _showDetail(items[_contentCol]);
+        }
+      } else if (_section == 4) {
+        // Grid selection
+        if (_showingFavorites) {
+          final favProvider = context.read<MovieFavoritesProvider>();
+          final favorites = favProvider.favorites;
+          final idx = _contentRow * _columns + _contentCol;
+          if (idx < favorites.length) {
+            final movie = favorites[idx];
+            if (movie.type == MovieType.series && movie.episodes != null && movie.episodes!.isNotEmpty) {
+              final groupedSeries = _createGroupedSeriesFromMovie(movie);
+              showDialog(
+                context: context,
+                barrierColor: Colors.black87,
+                builder: (_) => SeriesModalOptimized(series: groupedSeries),
+              );
+            } else {
+              showDialog(
+                context: context,
+                barrierColor: Colors.black87,
+                builder: (_) => MovieDetailModal(movie: movie),
+              );
+            }
+          }
+        } else {
+          // Normal category grid
+          final items = provider.displayItems;
+          final idx = _contentRow * _columns + _contentCol;
+          if (idx < items.length) {
+            _showDetail(items[idx]);
           }
         }
-      } else if (provider.selectedCategoryName == 'Todos' && !_isSearchMode) {
-        // Seleciona categoria
-        final cats = provider.availableCategories.where((c) => c != 'Todos').toList();
-        final idx = _contentRow * _columns + _contentCol;
-        if (idx < cats.length) {
-          provider.selectCategory(cats[idx]);
-          setState(() {
-            _showingFavorites = false; // Sai do modo favoritos
-          });
-          _contentRow = 0;
-          _contentCol = 0;
-          _scrollController.jumpTo(0);
-        }
-      } else {
-        // Abre detalhe
-        final items = provider.displayItems;
-        final idx = _contentRow * _columns + _contentCol;
-        if (idx < items.length) {
-          _showDetail(items[idx]);
-        }
       }
-    }
+
   }
   
   // === FUNÇÕES DE BUSCA ===
@@ -615,10 +713,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       return;
     }
     
-    // Debounce de 500ms para busca global (mais pesada)
-    _searchDebounce = Timer(const Duration(milliseconds: 500), () {
-      _performSearch(query);
-    });
+    // Apenas atualiza o estado visual, NÃO busca automaticamente
+    // A busca é disparada apenas pelo botão buscar ou enter (_submitSearch)
+    setState(() {});
   }
   
   Future<void> _performSearch(String query) async {
@@ -658,6 +755,21 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollModal());
   }
 
+  // === HELPER METHODS ===
+  Color _getRatingColor(double rating) {
+    if (rating >= 8.0) return const Color(0xFF4CAF50); // Green
+    if (rating >= 6.0) return const Color(0xFFFFC107); // Amber
+    return const Color(0xFFF44336); // Red
+  }
+
+  Color _getCertificationColor(String cert) {
+    final c = cert.toUpperCase();
+    if (c == 'L' || c == '0' || c == '10') return const Color(0xFF4CAF50);
+    if (c == '12' || c == '14') return const Color(0xFFFFC107);
+    if (c == '16' || c == '18') return const Color(0xFFF44336);
+    return Colors.grey;
+  }
+  
   void _openAdvancedFilters(LazyMoviesProvider provider) {
     showDialog(
       context: context,
@@ -684,30 +796,7 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     );
   }
 
-  void _scrollToMainSection(int section) {
-    if (!_scrollController.hasClients) return;
-    
-    // Calcula offsets aproximados
-    // Header (56) + Filtros (48) + Padding (12)
-    double offset = 0;
-    
-    if (section == 2) {
-      // Tendências Hoje: logo abaixo dos filtros
-      offset = 0; // Scroll principal fica no topo
-    } else if (section == 3) {
-      // Tendências Semana: Abaixo de Hoje
-      // Altura aprox de Hoje: Título (40) + Card (210) + Spacing (20)
-      if (_trendingToday.isNotEmpty) {
-        offset = 40 + _cardHeight + 20; 
-      }
-    }
-    
-    _scrollController.animateTo(
-      offset,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-    );
-  }
+
 
   void _scrollToRow() {
     if (!_scrollController.hasClients) return;
@@ -1018,6 +1107,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
               decoration: BoxDecoration(
                 color: const Color(0xFFDC2626),
                 borderRadius: BorderRadius.circular(8),
+                border: (_section == 1 && _filterIndex == 0) 
+                    ? Border.all(color: Colors.white, width: 2) 
+                    : null,
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1146,6 +1238,9 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
               decoration: BoxDecoration(
                 color: hasMinChars ? const Color(0xFF10B981) : Colors.white10,
                 borderRadius: BorderRadius.circular(8),
+                border: (_section == 1 && _filterIndex == 2) 
+                    ? Border.all(color: const Color(0xFFFFD700), width: 2) 
+                    : null,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1190,94 +1285,88 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       return _buildFavoritesGrid();
     }
     
-    // Se categoria é "Todos", mostra cards de categorias
-    if (provider.selectedCategoryName == 'Todos') {
+    // Se categoria é "Todos" ou "Tendências", mostra layout novo (Hero + Rows)
+    if (provider.selectedCategoryName == 'Todos' || provider.selectedCategoryName == '📊 Tendências') {
       return _buildCategoryCards(provider);
     }
     
-    // Se categoria é "📊 Tendências", mostra seções de hoje e semana
-    if (provider.selectedCategoryName == '📊 Tendências') {
-      return _buildTrendingContent(provider);
-    }
-    
-    // Senão, mostra grid de filmes/séries
-    return _buildContentGrid(provider);
+    // Senão, mostra grid de filmes/séries para categorias normais
+    return _buildCategoryGrid(provider);
   }
   
-  /// Conteúdo especial para categoria Tendências com seções Hoje e Semana
-  Widget _buildTrendingContent(LazyMoviesProvider provider) {
-    return ListView(
-      controller: _scrollController,
-      padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
-      children: [
-        // === TENDÊNCIAS DE HOJE ===
-        if (_trendingToday.isNotEmpty || _loadingTrending)
-          _buildTrendingSection(
-            title: '🔥 Tendências de Hoje',
-            items: _trendingToday,
-            isLoading: _loadingTrending,
-            isFocused: _section == 2,
-            selectedIndex: _trendingTodayIndex,
-            scrollController: _trendingTodayScroll,
-          ),
-        
-        if (_trendingToday.isNotEmpty || _loadingTrending) 
-          const SizedBox(height: 20),
-        
-        // === TENDÊNCIAS DA SEMANA ===
-        if (_trendingWeek.isNotEmpty || _loadingTrending)
-          _buildTrendingSection(
-            title: '📅 Tendências da Semana',
-            items: _trendingWeek,
-            isLoading: _loadingTrending,
-            isFocused: _section == 3,
-            selectedIndex: _trendingWeekIndex,
-            scrollController: _trendingWeekScroll,
-          ),
-        
-        const SizedBox(height: 20),
-        
-        // === RESTO DO CONTEÚDO (GRID) ===
-        // Permite navegação contínua para baixo
-        if (provider.displayItems.isNotEmpty) ...[
-           const Padding(
-            padding: EdgeInsets.only(left: 8, bottom: 12),
-            child: Text(
-              '📜 Outros Títulos',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+  /// Grid de categorias normais (não-agrupadas)
+  Widget _buildCategoryGrid(LazyMoviesProvider provider) {
+    // Grid logic is handled in navigation/key handler mainly
+    
+    final items = provider.displayItems;
+    
+    if (items.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.movie_filter_rounded, color: Colors.white24, size: 64),
+            const SizedBox(height: 16),
+            const Text(
+              'Nenhum item nesta categoria',
+              style: TextStyle(color: Colors.white54, fontSize: 18),
             ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+         Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Row(
+            children: [
+              Icon(_getCategoryIcon(provider.selectedCategoryName), color: const Color(0xFFE50914), size: 20),
+              const SizedBox(width: 8),
+              Text(
+                provider.selectedCategoryName,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Text('${items.length} itens', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            ],
           ),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
+        ),
+        Expanded(
+          child: GridView.builder(
+            controller: _scrollController,
+            padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: _columns,
               childAspectRatio: _cardWidth / _cardHeight,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
             ),
-            itemCount: provider.displayItems.length,
+            itemCount: items.length,
             itemBuilder: (context, index) {
               final row = index ~/ _columns;
               final col = index % _columns;
               final isFocused = _section == 4 && _contentRow == row && _contentCol == col;
               
               return _ContentCard(
-                item: provider.displayItems[index],
+                item: items[index],
                 isFocused: isFocused,
-                onTap: () => _showDetail(provider.displayItems[index]),
+                onTap: () => _showDetail(items[index]),
               );
             },
           ),
-          const SizedBox(height: 40), // Espaço extra no final
-        ],
+        ),
       ],
     );
   }
+  
+  /// Conteúdo especial para categoria Tendências com seções Hoje e Semana
+
   
   /// Grid de favoritos
   Widget _buildFavoritesGrid() {
@@ -1498,182 +1587,120 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
   Widget _buildCategoryCards(LazyMoviesProvider provider) {
     final categories = provider.availableCategories.where((c) => c != 'Todos').toList();
     
-    return ListView(
-      controller: _scrollController,
-      padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
-      children: [
-        // === CATEGORIAS ===
-        if (categories.isNotEmpty) ...[
-          const Padding(
-            padding: EdgeInsets.only(left: 8, bottom: 12),
-            child: Text(
-              '📺 Categorias',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: _columns,
-              childAspectRatio: 16 / 9,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-            ),
-            itemCount: categories.length,
-            itemBuilder: (context, index) {
-              final category = categories[index];
-              final row = index ~/ _columns;
-              final col = index % _columns;
-              final isFocused = _section == 4 && _contentRow == row && _contentCol == col;
-              
-              return _CategoryCard(
-                name: category,
-                isFocused: isFocused,
-                onTap: () {
-                  provider.selectCategory(category);
-                  setState(() {
-                    _showingFavorites = false;
-                    _contentRow = 0;
-                    _contentCol = 0;
-                  });
-                  _scrollController.jumpTo(0);
-                },
-              );
-            },
-          ),
-        ],
-      ],
-    );
-  }
-  
-  Widget _buildTrendingSection({
-    required String title,
-    required List<TrendingItem> items,
-    required bool isLoading,
-    required bool isFocused,
-    required int selectedIndex,
-    required ScrollController scrollController,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 8, bottom: 12),
-          child: Row(
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (isFocused) ...[
-                const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFD700).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    '← → navegar  •  OK selecionar',
-                    style: TextStyle(color: Color(0xFFFFD700), fontSize: 10),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        SizedBox(
-          height: _cardHeight + 40,
-          child: isLoading
-              ? _buildTrendingLoading()
-              : items.isEmpty
-                  ? const Center(child: Text('Sem tendências disponíveis', style: TextStyle(color: Colors.white38)))
-                  : ListView.builder(
-                      controller: scrollController,
-                      scrollDirection: Axis.horizontal,
-                      // OTIMIZADO: Cache para scroll mais suave
-                      cacheExtent: 500,
-                      addAutomaticKeepAlives: false,
-                      itemCount: items.length,
-                      itemBuilder: (context, index) {
-                        final item = items[index];
-                        final isSelected = isFocused && selectedIndex == index;
-                        
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 12),
-                          child: _TrendingCard(
-                            item: item,
-                            width: _cardWidth,
-                            height: _cardHeight,
-                            isFocused: isSelected,
-                            onTap: () => _showTrendingDetail(item),
-                          ),
-                        );
-                      },
-                    ),
-        ),
-      ],
-    );
-  }
-  
-  Widget _buildTrendingLoading() {
-    return ListView.builder(
-      scrollDirection: Axis.horizontal,
-      itemCount: 6,
-      itemBuilder: (context, index) {
-        return Padding(
-          padding: const EdgeInsets.only(right: 12),
-          child: Container(
-            width: _cardWidth,
-            height: _cardHeight,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Center(
-              child: CircularProgressIndicator(
-                color: Color(0xFFE50914),
-                strokeWidth: 2,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-  
-  void _showTrendingDetail(TrendingItem item) {
-    final movie = item.localMovie;
+    // Lista de rows a serem renderizadas
+    final widgetList = <Widget>[];
     
-    // Se é série COM episódios, usa o modal de série otimizado
-    if ((movie.type == MovieType.series || item.isSeries) && 
-        movie.episodes != null && movie.episodes!.isNotEmpty) {
-      final groupedSeries = _createGroupedSeriesFromMovie(movie);
-      showDialog(
-        context: context,
-        barrierColor: Colors.black87,
-        builder: (_) => SeriesModalOptimized(series: groupedSeries),
+    // 1. Hero Banner (Always shown if available)
+    widgetList.add(_buildHeroBanner());
+    widgetList.add(const SizedBox(height: 20));
+    
+    // 2. Rows
+    // Lógica de índices:
+    // A navegação usa _contentRow para saber em qual linha estamos na seção 3.
+    // Precisamos garantir que a ordem de renderização bata com a ordem lógica.
+    
+    int rowIndex = 0;
+    
+    // Row Optional: Tendências da Semana (FILTRADA)
+    final filteredTrendingWeek = _trendingWeek.where((t) {
+      if (provider.filterType == MovieFilterType.movies) return !t.isSeries;
+      if (provider.filterType == MovieFilterType.series) return t.isSeries;
+      return true;
+    }).toList();
+
+    if (filteredTrendingWeek.isNotEmpty) {
+      widgetList.add(
+        _buildCategoryRow(
+          '📅 Tendências da Semana',
+          filteredTrendingWeek.take(10).map((t) => CatalogDisplayItem(
+            type: t.isSeries ? DisplayItemType.series : DisplayItemType.movie,
+            movie: t.localMovie,
+          )).toList(),
+          rowIndex
+        )
       );
-      return;
+      rowIndex++;
     }
     
-    // Filme ou série sem episódios estruturados
-    showDialog(
-      context: context,
-      barrierColor: Colors.black87,
-      builder: (_) => MovieDetailModal(movie: movie),
+    // Rows: Categories
+    for (final cat in categories) {
+      final items = _getCategoryItems(provider, cat);
+      if (items.isNotEmpty) {
+        widgetList.add(_buildCategoryRow(cat, items, rowIndex));
+        rowIndex++;
+      }
+    }
+    
+    widgetList.add(const SizedBox(height: 100)); // Padding final
+
+    return ListView(
+      controller: _scrollController,
+      padding: EdgeInsets.zero,
+      children: widgetList,
     );
   }
+
+
+
+
+  // Método auxiliar para contar total de linhas disponíveis (usado na navegação)
+  int _getTotalRows(LazyMoviesProvider provider) {
+    int count = 0;
+    if (_trendingWeek.isNotEmpty) count++;
+    
+    final categories = provider.availableCategories.where((c) => c != 'Todos');
+    for (final cat in categories) {
+       if (_getCategoryItems(provider, cat).isNotEmpty) count++;
+    }
+    return count;
+  }
   
+  // Método auxiliar para obter controller da linha atual (usado na navegação)
+  ScrollController? _getCurrentRowController(LazyMoviesProvider provider) {
+    int currentIndex = 0;
+    
+    // Checa Tendências Semana
+    if (_trendingWeek.isNotEmpty) {
+      if (_contentRow == currentIndex) return _getRowController('📅 Tendências da Semana');
+      currentIndex++;
+    }
+    
+    // Checa Categorias
+    final categories = provider.availableCategories.where((c) => c != 'Todos');
+    for (final cat in categories) {
+       if (_getCategoryItems(provider, cat).isNotEmpty) {
+         if (_contentRow == currentIndex) return _getRowController(cat);
+         currentIndex++;
+       }
+    }
+    return null;
+  }
+  
+  // Método auxiliar para obter items da linha atual (usado na navegação)
+  List<CatalogDisplayItem> _getCurrentRowItems(LazyMoviesProvider provider) {
+    int currentIndex = 0;
+    
+    if (_trendingWeek.isNotEmpty) {
+      if (_contentRow == currentIndex) {
+        return _trendingWeek.take(10).map((t) => CatalogDisplayItem(
+          type: t.isSeries ? DisplayItemType.series : DisplayItemType.movie,
+          movie: t.localMovie,
+        )).toList();
+      }
+      currentIndex++;
+    }
+    
+    final categories = provider.availableCategories.where((c) => c != 'Todos');
+    for (final cat in categories) {
+       final items = _getCategoryItems(provider, cat);
+       if (items.isNotEmpty) {
+         if (_contentRow == currentIndex) return items;
+         currentIndex++;
+       }
+    }
+    return [];
+  }
+
   /// Converte um Movie (com episodes) para GroupedSeries
   GroupedSeries _createGroupedSeriesFromMovie(Movie movie) {
     final Map<int, List<Movie>> seasonMap = {};
@@ -1707,43 +1734,6 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
       seasons: seasonMap,
       isAdult: movie.isAdult,
       tmdb: movie.tmdb,
-    );
-  }
-
-  Widget _buildContentGrid(LazyMoviesProvider provider) {
-    final items = provider.displayItems;
-    
-    if (items.isEmpty) {
-      return const Center(
-        child: Text('Nenhum conteúdo', style: TextStyle(color: Colors.white38)),
-      );
-    }
-    
-    return GridView.builder(
-      controller: _scrollController,
-      padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02),
-      // OTIMIZADO: Reduz consumo de memória
-      addAutomaticKeepAlives: false,
-      addRepaintBoundaries: true,
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: _columns,
-        childAspectRatio: _cardWidth / _cardHeight,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-      ),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        final row = index ~/ _columns;
-        final col = index % _columns;
-        final isFocused = _section == 4 && _contentRow == row && _contentCol == col;
-        
-        return _ContentCard(
-          item: item,
-          isFocused: isFocused,
-          onTap: () => _showDetail(item),
-        );
-      },
     );
   }
 
@@ -1789,16 +1779,20 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
                     final isSelected = provider.selectedCategoryName == cat;
                     final isFocused = _modalIndex == index;
                     
-                    return GestureDetector(
-                      onTap: () {
-                        provider.selectCategory(cat);
-                        setState(() {
-                          _showCategoryModal = false;
-                          _contentRow = 0;
-                          _contentCol = 0;
-                        });
-                        _scrollController.jumpTo(0);
-                      },
+                      return GestureDetector(
+                        onTap: () {
+                          provider.selectCategory(cat);
+                          setState(() {
+                            _showCategoryModal = false;
+                            _showingFavorites = false; 
+                            _contentRow = 0;
+                            _contentCol = 0;
+                            // Reset section based on category type
+                            // Default to Filters (1) so user can filter or go down to content.
+                            _section = 1; 
+                          });
+                          _scrollController.jumpTo(0);
+                        },
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1878,6 +1872,279 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
     if (l.contains('anime')) return Icons.animation_rounded;
     if (l.contains('coleção') || l.contains('colecao')) return Icons.collections_rounded;
     return Icons.folder_rounded;
+  }
+
+  // === WIDGETS APPLE TV STYLE ===
+  
+  Widget _buildHeroBanner() {
+    if (_trendingToday.isEmpty) return const SizedBox.shrink();
+
+    final width = MediaQuery.of(context).size.width;
+    final itemWidth = width * 0.85; // Banner principal ocupa 85% da tela
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: MediaQuery.of(context).size.height * 0.45,
+          child: ListView.builder(
+            controller: _heroScrollController,
+            scrollDirection: Axis.horizontal,
+            itemCount: _trendingToday.where((t) {
+               final provider = context.watch<LazyMoviesProvider>();
+               if (provider.filterType == MovieFilterType.movies) return !t.isSeries;
+               if (provider.filterType == MovieFilterType.series) return t.isSeries;
+               return true;
+            }).length,
+            // Importante: padding para centralizar visualmente o primeiro item (opcional)
+            padding: EdgeInsets.symmetric(horizontal: (width - itemWidth) / 2),
+            physics: const ClampingScrollPhysics(), 
+            itemBuilder: (context, index) {
+               final provider = context.watch<LazyMoviesProvider>();
+               final filteredToday = _trendingToday.where((t) {
+                  if (provider.filterType == MovieFilterType.movies) return !t.isSeries;
+                  if (provider.filterType == MovieFilterType.series) return t.isSeries;
+                  return true;
+               }).toList();
+               
+               if (index >= filteredToday.length) return const SizedBox.shrink();
+               
+               final item = filteredToday[index];
+               final isFocused = _section == 2 && _heroIndex == index;
+               
+               // Scale animation logic based on focus
+               final scale = isFocused ? 1.0 : 0.95;
+               
+               return AnimatedContainer(
+                 duration: const Duration(milliseconds: 300),
+                 curve: Curves.easeOutCubic,
+                 width: itemWidth,
+                 margin: const EdgeInsets.symmetric(horizontal: 10),
+                 transform: Matrix4.identity()..scale(scale),
+                 child: Stack(
+                   fit: StackFit.expand,
+                   children: [
+                     // Backdrop Image
+                     Container(
+                       decoration: BoxDecoration(
+                         borderRadius: BorderRadius.circular(16),
+                         boxShadow: isFocused ? [
+                           BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 20, offset: const Offset(0, 10))
+                         ] : [],
+                       ),
+                       clipBehavior: Clip.antiAlias,
+                       child: CachedNetworkImage(
+                         imageUrl: item.localMovie.backdropUrl ?? item.localMovie.posterUrl,
+                         fit: BoxFit.cover,
+                         placeholder: (_, __) => Container(color: Colors.grey[900]),
+                         errorWidget: (_, __, ___) => Container(color: Colors.grey[900], child: const Icon(Icons.error)),
+                       ),
+                     ),
+                     
+                     // Gradient Overlay
+                     Container(
+                       decoration: BoxDecoration(
+                         borderRadius: BorderRadius.circular(16),
+                         gradient: const LinearGradient(
+                           begin: Alignment.topCenter,
+                           end: Alignment.bottomCenter,
+                           colors: [Colors.transparent, Colors.black87],
+                           stops: [0.3, 1.0],
+                         ),
+                       ),
+                     ),
+                     
+                     // Info
+                     Positioned(
+                       bottom: 20,
+                       left: 20,
+                       right: 20,
+                       child: Column(
+                         crossAxisAlignment: CrossAxisAlignment.start,
+                         children: [
+                            // Card (Poster)
+                            if (item.localMovie.posterUrl != null)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                width: 100,
+                                height: 150,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.5),
+                                      blurRadius: 15,
+                                      offset: const Offset(0, 8),
+                                    )
+                                  ],
+                                  border: Border.all(color: Colors.white24, width: 1.5),
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: CachedNetworkImage(
+                                  imageUrl: item.localMovie.posterUrl!,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, __) => Container(color: Colors.white10),
+                                  errorWidget: (_, __, ___) => Container(
+                                    color: Colors.white10,
+                                    child: const Icon(Icons.movie, color: Colors.white24, size: 40),
+                                  ),
+                                ),
+                              ),
+                              
+                            Text(
+                              item.title,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 32,
+                                fontWeight: FontWeight.bold,
+                                shadows: [Shadow(color: Colors.black, blurRadius: 8)],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 12),
+                            
+                            // Metadata (Rating & Certification)
+                            Row(
+                              children: [
+                                if (item.localMovie.tmdb?.rating != null && item.localMovie.tmdb!.rating! > 0) ...[
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: _getRatingColor(item.localMovie.tmdb!.rating!),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.star_rounded, color: Colors.white, size: 14),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          item.localMovie.tmdb!.rating!.toStringAsFixed(1),
+                                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                ],
+                                
+                                if (item.localMovie.tmdb?.certification != null && item.localMovie.tmdb!.certification!.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: _getCertificationColor(item.localMovie.tmdb!.certification!),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      item.localMovie.tmdb!.certification!,
+                                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  
+                                if (item.localMovie.tmdb?.overview != null) ...[
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Text(
+                                      item.localMovie.overview!,
+                                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                         ],
+                       ),
+                     ),
+                     
+                     // Border Focus
+                     if (isFocused)
+                       Container(
+                         decoration: BoxDecoration(
+                           borderRadius: BorderRadius.circular(16),
+                           border: Border.all(color: Colors.white, width: 3),
+                         ),
+                       ),
+                   ],
+                 ),
+               );
+            },
+          ),
+        ),
+        // Indicators removed as requested
+      ],
+    );
+  }
+
+  Widget _buildCategoryRow(String title, List<CatalogDisplayItem> items, int rowIndex) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    
+    final isRowFocused = _section == 3 && _contentRow == rowIndex;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(50, 20, 0, 10),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: isRowFocused ? Colors.white : Colors.white70,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 240, // Altura fixa suficiente para scale
+          child: ListView.builder(
+            controller: _getRowController(title),
+            scrollDirection: Axis.horizontal,
+            itemCount: items.length,
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            clipBehavior: Clip.none, // IMPORTANTE: Permite card crescer sem cortar
+            itemBuilder: (context, index) {
+               final item = items[index];
+               final isItemFocused = isRowFocused && _contentCol == index;
+               
+               // Scale effect
+               final scale = isItemFocused ? 1.05 : 1.0;
+               
+               return AnimatedContainer(
+                 duration: const Duration(milliseconds: 200),
+                 curve: Curves.easeOut,
+                 transform: Matrix4.identity()..scale(scale),
+                 margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 10), // Espaço para crescer
+                 width: 130, // Largura fixa do card
+                 child: _ContentCard(
+                   item: item,
+                   isFocused: isItemFocused,
+                   onTap: () => _showDetail(item),
+                 ),
+               );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+  
+  void _scrollToHorizontalIndex(ScrollController controller, int index, double itemWidth) {
+    if (!controller.hasClients) return;
+    
+    final screenW = MediaQuery.of(context).size.width;
+    final center = screenW / 2;
+    final paddingLeft = 40.0;
+    final itemCenter = (index * itemWidth) + (itemWidth / 2);
+    final offset = itemCenter + paddingLeft - center;
+    
+    controller.animateTo(
+      offset.clamp(0.0, controller.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
   }
 }
 
@@ -2006,285 +2273,18 @@ class _FilterButton extends StatelessWidget {
   }
 }
 
-class _TrendingCard extends StatelessWidget {
-  final TrendingItem item;
-  final double width;
-  final double height;
-  final bool isFocused;
-  final VoidCallback onTap;
 
-  const _TrendingCard({
-    required this.item,
-    required this.width,
-    required this.height,
-    required this.isFocused,
-    required this.onTap,
-  });
 
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: width,
-        height: height + 40,
-        transform: isFocused 
-            ? (Matrix4.identity()..scale(1.05))
-            : Matrix4.identity(),
-        transformAlignment: Alignment.center,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Poster
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  border: isFocused 
-                      ? Border.all(color: const Color(0xFFFFD700), width: 3)
-                      : null,
-                  boxShadow: isFocused
-                      ? [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.4), blurRadius: 12)]
-                      : [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 6)],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Imagem do poster
-                      // OTIMIZADO: CachedNetworkImage ao invés de Image.network
-                      item.posterUrl != null
-                          ? CachedNetworkImage(
-                              imageUrl: item.posterUrl!,
-                              fit: BoxFit.cover,
-                              memCacheWidth: 300,
-                              placeholder: (_, __) => _buildPlaceholder(),
-                              errorWidget: (_, __, ___) => _buildPlaceholder(),
-                            )
-                          : _buildPlaceholder(),
-                      
-                      // Gradiente inferior
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          height: 60,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
-                            ),
-                          ),
-                        ),
-                      ),
-                      
-                      // Badge de tipo (série ou filme)
-                      Positioned(
-                        top: 8,
-                        left: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: item.isSeries 
-                                ? const Color(0xFF8B5CF6)
-                                : const Color(0xFFE50914),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            item.isSeries ? 'SÉRIE' : 'FILME',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                      
-                      // Rating
-                      if (item.rating > 0)
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.7),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.star, color: Color(0xFFFFD700), size: 12),
-                                const SizedBox(width: 2),
-                                Text(
-                                  item.rating.toStringAsFixed(1),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            
-            // Título
-            const SizedBox(height: 6),
-            Text(
-              item.localMovie.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: isFocused ? const Color(0xFFFFD700) : Colors.white,
-                fontSize: 12,
-                fontWeight: isFocused ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildPlaceholder() {
-    return Container(
-      color: Colors.grey[850],
-      child: const Center(
-        child: Icon(Icons.movie, color: Colors.white24, size: 40),
-      ),
-    );
-  }
-}
-
-class _CategoryCard extends StatelessWidget {
-  final String name;
-  final bool isFocused;
-  final VoidCallback onTap;
-
-  const _CategoryCard({
-    required this.name,
-    required this.isFocused,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              _getCategoryColor(name),
-              _getCategoryColor(name).withAlpha(150),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(8),
-          border: isFocused ? Border.all(color: const Color(0xFFFFD700), width: 3) : null,
-          boxShadow: isFocused
-              ? [BoxShadow(color: const Color(0xFFFFD700).withAlpha(100), blurRadius: 12)]
-              : null,
-        ),
-        child: Stack(
-          children: [
-            // Ícone de fundo
-            Positioned(
-              right: -20,
-              bottom: -20,
-              child: Icon(
-                _getCategoryIcon(name),
-                size: 80,
-                color: Colors.white10,
-              ),
-            ),
-            // Conteúdo
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Icon(_getCategoryIcon(name), color: Colors.white, size: 24),
-                  const SizedBox(height: 8),
-                  Text(
-                    name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Color _getCategoryColor(String cat) {
-    final l = cat.toLowerCase();
-    if (l.contains('netflix')) return const Color(0xFFE50914);
-    if (l.contains('prime')) return const Color(0xFF00A8E1);
-    if (l.contains('disney')) return const Color(0xFF113CCF);
-    if (l.contains('max') || l.contains('hbo')) return const Color(0xFF8B5CF6);
-    if (l.contains('paramount')) return const Color(0xFF0066FF);
-    if (l.contains('apple')) return const Color(0xFF555555);
-    if (l.contains('globo')) return const Color(0xFFFF6B00);
-    if (l.contains('novela')) return const Color(0xFFEC4899);
-    if (l.contains('anime') || l.contains('crunchyroll')) return const Color(0xFFF97316);
-    if (l.contains('lançamento')) return const Color(0xFF10B981);
-    if (l.contains('coleção') || l.contains('colecao')) return const Color(0xFF8B5CF6);
-    if (l.contains('ação') || l.contains('acao')) return const Color(0xFFDC2626);
-    if (l.contains('comédia') || l.contains('comedia')) return const Color(0xFFFBBF24);
-    if (l.contains('terror')) return const Color(0xFF1F2937);
-    if (l.contains('drama')) return const Color(0xFF6366F1);
-    if (l.contains('ficção') || l.contains('sci-fi')) return const Color(0xFF06B6D4);
-    if (l.contains('romance')) return const Color(0xFFF472B6);
-    if (l.contains('documentário') || l.contains('documentario')) return const Color(0xFF84CC16);
-    if (l.contains('infantil')) return const Color(0xFFA855F7);
-    return const Color(0xFF374151);
-  }
-
-  IconData _getCategoryIcon(String cat) {
-    final l = cat.toLowerCase();
-    if (l.contains('netflix')) return Icons.play_circle_rounded;
-    if (l.contains('prime')) return Icons.shopping_bag_rounded;
-    if (l.contains('disney')) return Icons.castle_rounded;
-    if (l.contains('max') || l.contains('hbo')) return Icons.movie_rounded;
-    if (l.contains('novela')) return Icons.favorite_rounded;
-    if (l.contains('anime')) return Icons.animation_rounded;
-    if (l.contains('lançamento')) return Icons.new_releases_rounded;
-    if (l.contains('coleção') || l.contains('colecao')) return Icons.collections_rounded;
-    if (l.contains('ação') || l.contains('acao')) return Icons.local_fire_department_rounded;
-    if (l.contains('comédia') || l.contains('comedia')) return Icons.sentiment_very_satisfied_rounded;
-    if (l.contains('terror')) return Icons.nights_stay_rounded;
-    if (l.contains('drama')) return Icons.theater_comedy_rounded;
-    if (l.contains('ficção') || l.contains('sci-fi')) return Icons.rocket_launch_rounded;
-    if (l.contains('romance')) return Icons.favorite_border_rounded;
-    if (l.contains('documentário') || l.contains('documentario')) return Icons.video_camera_back_rounded;
-    if (l.contains('infantil')) return Icons.child_care_rounded;
-    return Icons.folder_rounded;
-  }
-}
 
 /// OTIMIZADO: Convertido para StatelessWidget, usa dados TMDB pré-carregados
+  // === WIDGETS APPLE TV STYLE ===
+  
+
+
+
+
+
+
 class _ContentCard extends StatelessWidget {
   final CatalogDisplayItem item;
   final bool isFocused;
@@ -2447,7 +2447,7 @@ class _ContentCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          item.displayName,
+                          item.movie?.name ?? item.series?.name ?? '',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 11,
@@ -2479,32 +2479,25 @@ class _ContentCard extends StatelessWidget {
 
   Widget _placeholder() {
     return Container(
-      color: const Color(0xFF1A1A1A),
-      child: Center(
-        child: Icon(
-          item.type == DisplayItemType.series ? Icons.tv : Icons.movie,
-          color: Colors.white24,
-          size: 32,
-        ),
+      color: Colors.white10,
+      child: const Center(
+        child: Icon(Icons.movie_rounded, color: Colors.white24),
       ),
     );
   }
 
   Color _getRatingColor(double rating) {
-    if (rating >= 7.5) return const Color(0xFF22C55E);
-    if (rating >= 6.0) return const Color(0xFFF59E0B);
-    if (rating >= 4.0) return const Color(0xFFF97316);
-    return const Color(0xFFEF4444);
+    if (rating >= 8.0) return const Color(0xFF4CAF50); // Green
+    if (rating >= 6.0) return const Color(0xFFFFC107); // Amber
+    return const Color(0xFFF44336); // Red
   }
 
   Color _getCertificationColor(String cert) {
     final c = cert.toUpperCase();
-    if (c == 'L' || c == 'G' || c == 'TV-G' || c == 'TV-Y') return const Color(0xFF22C55E);
-    if (c == '10' || c == 'PG' || c == 'TV-PG' || c == 'TV-Y7') return const Color(0xFF3B82F6);
-    if (c == '12' || c == 'PG-13' || c == 'TV-14') return const Color(0xFFF59E0B);
-    if (c == '14') return const Color(0xFFF97316);
-    if (c == '16' || c == 'R' || c == 'TV-MA') return const Color(0xFFEF4444);
-    if (c == '18' || c == 'NC-17' || c == 'NR') return const Color(0xFF000000);
-    return const Color(0xFF6B7280);
+    if (c == 'L' || c == '0' || c == '10') return const Color(0xFF4CAF50);
+    if (c == '12' || c == '14') return const Color(0xFFFFC107);
+    if (c == '16' || c == '18') return const Color(0xFFF44336);
+    return Colors.grey;
   }
 }
+

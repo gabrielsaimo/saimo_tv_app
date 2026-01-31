@@ -5,6 +5,7 @@ import '../providers/settings_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/favorites_provider.dart';
 import '../providers/lazy_movies_provider.dart';
+import '../services/json_catalog_service.dart';
 import '../utils/theme.dart';
 import '../utils/tv_constants.dart';
 
@@ -54,6 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       title: 'Dados',
       icon: Icons.storage_rounded,
       items: [
+        _SettingItem(id: 'refreshCatalog', title: 'Atualizar Catálogo', type: _ItemType.action),
         _SettingItem(id: 'clearFavorites', title: 'Limpar Favoritos', type: _ItemType.action),
         _SettingItem(id: 'resetSettings', title: 'Restaurar Padrões', type: _ItemType.action),
       ],
@@ -215,12 +217,38 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       case 'adultMode':
         _showPasswordDialog(settings);
         break;
+      case 'refreshCatalog':
+        _refreshCatalog();
+        break;
       case 'clearFavorites':
         _confirmClearFavorites();
         break;
       case 'resetSettings':
         _confirmResetSettings();
         break;
+    }
+  }
+
+  void _refreshCatalog() async {
+    _showSnackBar('Atualizando catálogo...', Icons.refresh);
+    
+    try {
+      // Clear local catalog cache
+      final catalogService = JsonCatalogService();
+      await catalogService.clearLocalCache();
+      
+      // Reload movies provider
+      if (mounted) {
+        final moviesProvider = context.read<LazyMoviesProvider>();
+        await moviesProvider.initialize(); // Force reload
+        
+        _showSnackBar('Catálogo atualizado!', Icons.check_circle);
+      }
+    } catch (e) {
+      debugPrint('Erro ao atualizar catálogo: $e');
+      if (mounted) {
+        _showSnackBar('Erro ao atualizar', Icons.error);
+      }
     }
   }
 
