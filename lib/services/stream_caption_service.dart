@@ -1,169 +1,308 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:vosk_flutter/vosk_flutter.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive.dart';
 import 'package:http/http.dart' as http;
-import 'package:permission_handler/permission_handler.dart';
 
+/// Serviço de legendas em tempo real usando Vosk nativo.
+/// 
+/// Este serviço usa um plugin Android nativo que:
+/// 1. Captura áudio diretamente do ExoPlayer (não do microfone)
+/// 2. Processa com Vosk para transcrição em tempo real
+/// 3. Retorna legendas via EventChannel
 class StreamCaptionService extends ChangeNotifier {
   static final StreamCaptionService _instance = StreamCaptionService._internal();
   factory StreamCaptionService() => _instance;
   StreamCaptionService._internal();
 
-  Recognizer? _recognizer;
-  Model? _model;
-  SpeechService? _speechService;
+  // Platform channels
+  static const _methodChannel = MethodChannel('com.saimo.saimo_tv/vosk_caption');
+  static const _eventChannel = EventChannel('com.saimo.saimo_tv/vosk_results');
   
-  bool _isInitializing = false;
+  // State
   bool _isListening = false;
+  bool _modelLoaded = false;
+  bool _isInitializing = false;
   String _currentText = '';
+  String _partialText = '';
   String _statusMessage = '';
-
+  double _downloadProgress = 0.0;
+  bool _hasError = false;
+  
+  // Event subscription
+  StreamSubscription? _eventSubscription;
+  
+  // Caption timing
+  Timer? _clearTimer;
+  final List<String> _captionHistory = [];
+  
+  // Getters
   bool get isListening => _isListening;
-  String get currentText => _currentText;
+  bool get modelReady => _modelLoaded;
+  bool get hasError => _hasError;
+  String get currentText => _currentText.isNotEmpty ? _currentText : _partialText;
   String get statusMessage => _statusMessage;
+  double get downloadProgress => _downloadProgress;
 
+  /// Initialize the Vosk model
   Future<void> initialize() async {
-    if (_model != null) return;
-    if (_isInitializing) return;
-
+    if (_modelLoaded || _isInitializing) return;
+    
     _isInitializing = true;
+    _hasError = false;
     _setStatus('Preparando legenda...');
-
+    notifyListeners();
+    
     try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final modelPath = '${appDir.path}/vosk-model-small-pt-0.3';
-      final modelDir = Directory(modelPath);
-
-      if (!await modelDir.exists()) {
-        await _downloadAndUnzipModel(appDir.path);
+      // Subscribe to events from native
+      _eventSubscription?.cancel();
+      _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
+        _handleNativeEvent,
+        onError: (e) {
+          debugPrint('[Caption] Event error: $e');
+          _hasError = true;
+          _setStatus('Erro');
+          notifyListeners();
+        },
+      );
+      
+      // Check if model needs to be downloaded to assets
+      await _ensureModelAvailable();
+      
+      // Initialize the native model
+      final result = await _methodChannel.invokeMethod<bool>('initModel');
+      
+      if (result == true) {
+        _modelLoaded = true;
+        _setStatus('Pronto');
+        debugPrint('✅ [Caption] Model initialized');
+      } else {
+        throw Exception('Failed to initialize model');
       }
-
-      final vosk = VoskFlutterPlugin.instance();
-      _model = await vosk.createModel(modelPath);
-      // Sample rate 16k is standard for Vosk models, but Mic usually 16k or 44k
-      // Vosk plugin usually handles resampling if initialized via initSpeechService?
-      // initSpeechService takes recognizer. The recognizer sample rate must match.
-      // We'll stick to 16000.
-      _recognizer = await vosk.createRecognizer(model: _model!, sampleRate: 16000);
       
-      _speechService = await vosk.initSpeechService(_recognizer!);
-      _speechService!.onPartial().listen((partial) => _parseVoskResult(partial, isPartial: true));
-      _speechService!.onResult().listen((result) => _parseVoskResult(result));
-      
-      _setStatus('Pronto.');
     } catch (e) {
-      debugPrint('Erro init Vosk: $e');
-      _setStatus('Erro: $e');
+      debugPrint('❌ [Caption] Init error: $e');
+      _setStatus('Erro ao carregar modelo');
+      _hasError = true;
     } finally {
       _isInitializing = false;
       notifyListeners();
     }
   }
 
-  Future<void> _downloadAndUnzipModel(String destPath) async {
-    _setStatus('Baixando modelo de voz (30MB)...');
+  /// Ensure the Vosk model is available in the app
+  Future<void> _ensureModelAvailable() async {
+    // The model should be bundled in assets or downloaded
+    // For now, we'll try to download it to the documents directory
+    // and let the native code unpack it from there
+    
+    final appDir = await getApplicationDocumentsDirectory();
+    final modelDir = Directory('${appDir.path}/vosk-model-small-pt-0.3');
+    
+    if (await modelDir.exists()) {
+      final files = await modelDir.list().toList();
+      if (files.isNotEmpty) {
+        debugPrint('[Caption] Model already downloaded');
+        return;
+      }
+    }
+    
+    // Download the model
+    await _downloadModel(appDir.path);
+  }
+
+  /// Download the Vosk Portuguese model
+  Future<void> _downloadModel(String destPath) async {
+    _setStatus('Baixando modelo de voz...');
     const url = 'https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip';
     
     try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        _setStatus('Instalando modelo...');
-        final bytes = response.bodyBytes;
-        final archive = ZipDecoder().decodeBytes(bytes);
-
-        for (final file in archive) {
-          final filename = '$destPath/${file.name}';
-          if (file.isFile) {
-            final outFile = File(filename);
-            await outFile.create(recursive: true);
-            await outFile.writeAsBytes(file.content as List<int>);
-          } else {
-            await Directory(filename).create(recursive: true);
-          }
-        }
-      } else {
-         throw Exception('Falha download: ${response.statusCode}');
+      final client = http.Client();
+      final request = http.Request('GET', Uri.parse(url));
+      final response = await client.send(request);
+      
+      if (response.statusCode != 200) {
+        throw Exception('Download failed: ${response.statusCode}');
       }
+      
+      final contentLength = response.contentLength ?? 0;
+      final bytes = <int>[];
+      int received = 0;
+      
+      await for (final chunk in response.stream) {
+        bytes.addAll(chunk);
+        received += chunk.length;
+        
+        if (contentLength > 0) {
+          _downloadProgress = received / contentLength;
+          _setStatus('Baixando modelo... ${(_downloadProgress * 100).toStringAsFixed(0)}%');
+        }
+      }
+      
+      _setStatus('Instalando modelo...');
+      
+      final archive = ZipDecoder().decodeBytes(Uint8List.fromList(bytes));
+      
+      for (final file in archive) {
+        final filename = '$destPath/${file.name}';
+        if (file.isFile) {
+          final outFile = File(filename);
+          await outFile.create(recursive: true);
+          await outFile.writeAsBytes(file.content as List<int>);
+        } else {
+          await Directory(filename).create(recursive: true);
+        }
+      }
+      
+      client.close();
+      _downloadProgress = 1.0;
+      _setStatus('Modelo instalado!');
+      
     } catch (e) {
-       _setStatus('Erro: $e');
-       rethrow;
+      _setStatus('Erro no download');
+      _hasError = true;
+      rethrow;
     }
   }
 
-  /// Inicia a legenda (Microfone)
-  /// O parametro streamUrl é ignorado pois usamos Mic agora
+  /// Handle events from native code
+  void _handleNativeEvent(dynamic event) {
+    if (event is Map) {
+      final type = event['type'] as String?;
+      final data = event['data'] as String?;
+      
+      if (type == null || data == null) return;
+      
+      switch (type) {
+        case 'final':
+          _currentText = data;
+          _partialText = '';
+          
+          _captionHistory.add(data);
+          if (_captionHistory.length > 5) {
+            _captionHistory.removeAt(0);
+          }
+          
+          _clearTimer?.cancel();
+          _clearTimer = Timer(const Duration(seconds: 5), () {
+            _currentText = '';
+            _partialText = '';
+            notifyListeners();
+          });
+          
+          notifyListeners();
+          debugPrint('[Caption] FINAL: $data');
+          break;
+          
+        case 'partial':
+          _partialText = data;
+          notifyListeners();
+          break;
+          
+        case 'status':
+          _setStatus(data);
+          break;
+          
+        case 'modelLoaded':
+          _modelLoaded = true;
+          notifyListeners();
+          break;
+          
+        case 'error':
+          debugPrint('[Caption] Native error: $data');
+          _hasError = true;
+          _setStatus('Erro: $data');
+          notifyListeners();
+          break;
+      }
+    }
+  }
+
+  /// Start captioning
   Future<void> startCaptioning(String streamUrl) async {
     if (_isListening) return;
     
-    // Solicita permissão de Mic
-    if (await Permission.microphone.request().isDenied) {
-      _setStatus('Permissão de microfone negada.');
-      return;
-    }
-
-    if (_model == null) {
+    _hasError = false;
+    
+    // Initialize if not done
+    if (!_modelLoaded) {
       await initialize();
+      if (!_modelLoaded) {
+        debugPrint('[Caption] Model not available, captioning disabled');
+        return;
+      }
     }
     
-    if (_speechService == null) {
-      _setStatus('Falha no serviço de voz.');
-      return;
-    }
-
     try {
-      await _speechService!.start();
-      _isListening = true;
-      _setStatus('Ouvindo...');
-      notifyListeners();
+      final result = await _methodChannel.invokeMethod<bool>('startRecognition');
+      
+      if (result == true) {
+        _isListening = true;
+        _setStatus('Ouvindo...');
+        notifyListeners();
+        debugPrint('✅ [Caption] Started recognition');
+      }
     } catch (e) {
-      debugPrint('Erro start: $e');
-      _setStatus('Erro ao iniciar.');
+      debugPrint('❌ [Caption] Start error: $e');
+      _hasError = true;
+      _setStatus('Erro ao iniciar');
+      notifyListeners();
     }
   }
 
+  /// Process audio data from the video player
+  /// This should be called with PCM audio chunks
+  Future<void> processAudio(Uint8List audioData) async {
+    if (!_isListening || !_modelLoaded) return;
+    
+    try {
+      await _methodChannel.invokeMethod('processAudio', {'audio': audioData});
+    } catch (e) {
+      debugPrint('[Caption] Process error: $e');
+    }
+  }
+
+  /// Stop captioning
   Future<void> stopCaptioning() async {
     if (!_isListening) return;
+    
     try {
-      await _speechService?.stop();
+      await _methodChannel.invokeMethod('stopRecognition');
+      
       _isListening = false;
+      _currentText = '';
+      _partialText = '';
+      _setStatus('');
+      
       notifyListeners();
+      debugPrint('[Caption] Stopped');
     } catch (e) {
-      debugPrint('Erro stop: $e');
+      debugPrint('[Caption] Stop error: $e');
     }
   }
-  
-  void _parseVoskResult(String jsonStr, {bool isPartial = false}) {
-     // Vosk retorna JSON string
-     // Simple regex parse
-     var text = '';
-     if (isPartial) {
-        final match = RegExp(r'"partial"\s*:\s*"(.*)"').firstMatch(jsonStr);
-        if (match != null) text = match.group(1) ?? '';
-     } else {
-        final match = RegExp(r'"text"\s*:\s*"(.*)"').firstMatch(jsonStr);
-        if (match != null) text = match.group(1) ?? '';
-     }
-     
-     if (text.isNotEmpty) {
-       _currentText = text;
-       notifyListeners();
-       
-       if (!isPartial) {
-          Future.delayed(const Duration(seconds: 4), () {
-             if (_currentText == text) {
-                _currentText = '';
-                notifyListeners();
-             }
-          });
-       }
-     }
+
+  /// Reset the service
+  void reset() {
+    _currentText = '';
+    _partialText = '';
+    _captionHistory.clear();
+    _clearTimer?.cancel();
+    notifyListeners();
   }
-  
+
   void _setStatus(String msg) {
     _statusMessage = msg;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    stopCaptioning();
+    _eventSubscription?.cancel();
+    _clearTimer?.cancel();
+    super.dispose();
   }
 }

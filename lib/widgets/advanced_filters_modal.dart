@@ -406,40 +406,45 @@ class _AdvancedFiltersModalState extends State<AdvancedFiltersModal> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildCompactHeader(),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Linha 1: Gêneros (compacto)
-                      Container(key: _sectionKeys[0], child: _buildCompactGenresSection()),
-                      const SizedBox(height: 10),
-                      // Linha 2: Ano, Nota, Classificação (3 colunas)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: Container(key: _sectionKeys[1], child: _buildCompactYearSection())),
-                          const SizedBox(width: 12),
-                          Expanded(child: Container(key: _sectionKeys[2], child: _buildCompactRatingSection())),
-                          const SizedBox(width: 12),
-                          Expanded(child: Container(key: _sectionKeys[3], child: _buildCompactCertificationSection())),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      // Linha 3: Duração e Ordenação (2 colunas)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: Container(key: _sectionKeys[4], child: _buildCompactRuntimeSection())),
-                          const SizedBox(width: 12),
-                          Expanded(flex: 2, child: Container(key: _sectionKeys[5], child: _buildCompactSortSection())),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      // Botões
-                      Container(key: _sectionKeys[6], child: _buildActionButtons()),
-                    ],
+                // Wrap content in Flexible + SingleChildScrollView for mobile scroll
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Linha 1: Gêneros (compacto)
+                        Container(key: _sectionKeys[0], child: _buildCompactGenresSection()),
+                        const SizedBox(height: 10),
+                        // Linha 2: Ano, Nota, Classificação (3 colunas)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: Container(key: _sectionKeys[1], child: _buildCompactYearSection())),
+                            const SizedBox(width: 12),
+                            Expanded(child: Container(key: _sectionKeys[2], child: _buildCompactRatingSection())),
+                            const SizedBox(width: 12),
+                            Expanded(child: Container(key: _sectionKeys[3], child: _buildCompactCertificationSection())),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        // Linha 3: Duração e Ordenação (2 colunas)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: Container(key: _sectionKeys[4], child: _buildCompactRuntimeSection())),
+                            const SizedBox(width: 12),
+                            Expanded(flex: 2, child: Container(key: _sectionKeys[5], child: _buildCompactSortSection())),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        // Botões - sempre visíveis com padding inferior extra
+                        Container(key: _sectionKeys[6], child: _buildActionButtons()),
+                        // Extra bottom padding para garantir visibilidade
+                        SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
+                      ],
+                    ),
                   ),
                 ),
               ],

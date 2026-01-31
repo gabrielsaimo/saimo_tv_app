@@ -484,7 +484,8 @@ class _ChannelsScreenState extends State<ChannelsScreen>
           setState(() => _showMiniGuide = false);
           return;
         }
-        _showExitConfirmation();
+        // Navega de volta para o seletor em vez de fechar o app
+        Navigator.of(context).pushReplacementNamed('/selector');
       },
       child: Shortcuts(
         shortcuts: <ShortcutActivator, Intent>{

@@ -787,32 +787,48 @@ class _CatalogScreenLiteState extends State<CatalogScreenLite> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
-      body: Focus(
-        focusNode: _focusNode,
-        onKeyEvent: _handleKey,
-        child: Consumer<LazyMoviesProvider>(
-          builder: (context, provider, _) {
-            if (provider.isLoadingIndex) {
-              return const Center(
-                child: CircularProgressIndicator(color: Color(0xFFE50914)),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_showCategoryModal) {
+          setState(() => _showCategoryModal = false);
+          return;
+        }
+        if (_isSearchMode) {
+          _closeSearch();
+          return;
+        }
+        // Navega de volta para o seletor
+        Navigator.of(context).pushReplacementNamed('/selector');
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A0A0A),
+        body: Focus(
+          focusNode: _focusNode,
+          onKeyEvent: _handleKey,
+          child: Consumer<LazyMoviesProvider>(
+            builder: (context, provider, _) {
+              if (provider.isLoadingIndex) {
+                return const Center(
+                  child: CircularProgressIndicator(color: Color(0xFFE50914)),
+                );
+              }
+              
+              return Stack(
+                children: [
+                  Column(
+                    children: [
+                      _buildHeader(provider),
+                      _buildFilters(provider),
+                      Expanded(child: _buildContent(provider)),
+                    ],
+                  ),
+                  if (_showCategoryModal) _buildCategoryModal(provider),
+                ],
               );
-            }
-            
-            return Stack(
-              children: [
-                Column(
-                  children: [
-                    _buildHeader(provider),
-                    _buildFilters(provider),
-                    Expanded(child: _buildContent(provider)),
-                  ],
-                ),
-                if (_showCategoryModal) _buildCategoryModal(provider),
-              ],
-            );
-          },
+            },
+          ),
         ),
       ),
     );

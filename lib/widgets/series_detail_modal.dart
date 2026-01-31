@@ -76,24 +76,24 @@ class _SeriesDetailModalState extends State<SeriesDetailModal> {
     // Melhor: StorageService poderia ter um método getSeriesProgress mas não tem.
     // Vamos iterar pelas temporadas disponíveis.
     
-    int latestTimestamp = 0;
-    Movie? lastWatched;
-    
-    // Estratégia simples: percorre todos episódios e vê qual tem progresso > 0 (ou timestamp mais recente se tivéssemos)
-    // Como StorageService só guarda progresso em segundos, pegamos o primeiro que encontrarmos ou o último da lista
-    // O ideal seria salvar "lastWatchedEpisode" para a série.
-    // Vamos verificar se há um episódio marcado como favorito ou com progresso significativo.
-    
     // Iterar reversamente (últimas temporadas primeiro) para achar o mais recente provavelmente
     for (final season in _availableSeasons.reversed) {
       final episodes = widget.series.getSeasonEpisodes(season);
-      for (final ep in episodes.reversed) {
+      for (int epIndex = episodes.length - 1; epIndex >= 0; epIndex--) {
+         final ep = episodes[epIndex];
          final progress = await storage.getMovieProgress(ep.id);
          if (progress > 60) { // Mais de 1 minuto assistido
              // Achamos um episódio iniciado.
              if (mounted) {
+                 // Encontra o índice da temporada correta
+                 final seasonIdx = _availableSeasons.indexOf(season);
                  setState(() {
                      _continueEpisode = ep;
+                     // Atualiza o índice da temporada selecionada para corresponder ao episódio encontrado
+                     if (seasonIdx >= 0) {
+                       _selectedSeasonIndex = seasonIdx;
+                       _selectedEpisodeIndex = epIndex;
+                     }
                  });
              }
              return; // Encontrou o mais recente (aproximadamente)

@@ -348,6 +348,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       _activeController?.dispose();
       _activeController = null;
       
+      // Reset caption service when changing channels
+      StreamCaptionService().reset();
+      
       // Validação da URL
       var url = channel.url.trim();
       if (url.isEmpty) {

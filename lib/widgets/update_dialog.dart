@@ -17,136 +17,173 @@ class UpdateDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final isCompact = size.height < 600 || size.width < 400;
+    
     return WillPopScope(
       onWillPop: () async => !forceUpdate,
       child: Dialog(
         backgroundColor: SaimoTheme.surface,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: isCompact ? 16 : 40,
+          vertical: isCompact ? 24 : 40,
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: SaimoTheme.primary, width: 2),
         ),
         child: Container(
-          width: 500,
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.system_update,
-                size: 80,
-                color: SaimoTheme.primary,
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'Nova Versão Disponível',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
+          constraints: BoxConstraints(
+            maxWidth: isCompact ? size.width * 0.92 : 500,
+            maxHeight: size.height * 0.85,
+          ),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(isCompact ? 20 : 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.system_update,
+                  size: isCompact ? 56 : 80,
+                  color: SaimoTheme.primary,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Uma nova versão do Saimo TV está disponível.\nPor favor, atualize para continuar.',
-                style: const TextStyle(
-                  color: SaimoTheme.textSecondary,
-                  fontSize: 18,
+                SizedBox(height: isCompact ? 16 : 24),
+                Text(
+                  'Nova Versão Disponível',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: isCompact ? 20 : 28,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                decoration: BoxDecoration(
-                  color: SaimoTheme.surfaceLight,
-                  borderRadius: BorderRadius.circular(8),
+                SizedBox(height: isCompact ? 12 : 16),
+                Text(
+                  'Uma nova versão do Saimo TV está disponível.\nPor favor, atualize para continuar.',
+                  style: TextStyle(
+                    color: SaimoTheme.textSecondary,
+                    fontSize: isCompact ? 14 : 18,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildVersionBadge('Versão Atual', currentVersion, Colors.grey),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Icon(Icons.arrow_forward, color: Colors.white),
+                SizedBox(height: isCompact ? 16 : 24),
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isCompact ? 12 : 24,
+                    vertical: isCompact ? 8 : 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: SaimoTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: isCompact
+                      // Layout vertical para telas pequenas
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildVersionBadge('Versão Atual', currentVersion, Colors.grey, isCompact),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Icon(Icons.arrow_downward, color: Colors.white, size: 20),
+                            ),
+                            _buildVersionBadge('Nova Versão', newVersion, SaimoTheme.success, isCompact),
+                          ],
+                        )
+                      // Layout horizontal para telas grandes
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildVersionBadge('Versão Atual', currentVersion, Colors.grey, isCompact),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 16),
+                              child: Icon(Icons.arrow_forward, color: Colors.white),
+                            ),
+                            _buildVersionBadge('Nova Versão', newVersion, SaimoTheme.success, isCompact),
+                          ],
+                        ),
+                ),
+                SizedBox(height: isCompact ? 20 : 32),
+                SizedBox(
+                  width: double.infinity,
+                  height: isCompact ? 44 : 50,
+                  child: ElevatedButton(
+                    onPressed: () => _launchUpdateUrl(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: SaimoTheme.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
-                    _buildVersionBadge('Nova Versão', newVersion, SaimoTheme.success),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: () => _launchUpdateUrl(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: SaimoTheme.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                    child: Text(
+                      'ATUALIZAR AGORA',
+                      style: TextStyle(
+                        fontSize: isCompact ? 14 : 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                  child: const Text(
-                    'ATUALIZAR AGORA',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
                 ),
-              ),
-            if (!forceUpdate)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text(
-                      'Lembrar depois',
-                      style: TextStyle(color: SaimoTheme.textTertiary),
+              if (!forceUpdate)
+                  Padding(
+                    padding: EdgeInsets.only(top: isCompact ? 12 : 16),
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(
+                        'Lembrar depois',
+                        style: TextStyle(
+                          color: SaimoTheme.textTertiary,
+                          fontSize: isCompact ? 12 : 14,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: EdgeInsets.only(top: isCompact ? 12 : 16),
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(
+                        'Fechar',
+                        style: TextStyle(
+                          color: SaimoTheme.textTertiary,
+                          fontSize: isCompact ? 12 : 14,
+                        ),
+                      ),
                     ),
                   ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text(
-                      'Fechar',
-                      style: TextStyle(color: SaimoTheme.textTertiary),
-                    ),
-                  ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildVersionBadge(String label, String version, Color color) {
+
+  Widget _buildVersionBadge(String label, String version, Color color, bool isCompact) {
     return Column(
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: SaimoTheme.textTertiary,
-            fontSize: 12,
+            fontSize: isCompact ? 10 : 12,
           ),
         ),
-        const SizedBox(height: 4),
+        SizedBox(height: isCompact ? 2 : 4),
         Text(
           version,
           style: TextStyle(
             color: color,
-            fontSize: 18,
+            fontSize: isCompact ? 14 : 18,
             fontWeight: FontWeight.bold,
           ),
         ),
       ],
     );
   }
+
 
   Future<void> _launchUpdateUrl(BuildContext context) async {
     const url = 'https://saimo-tv.vercel.app/app';
