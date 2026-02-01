@@ -54,7 +54,8 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
   Duration _savedPosition = Duration.zero;
 
   // Estratégia de Retentativa
-  PlayerStrategy _currentStrategy = PlayerStrategy.sanitized;
+  // Mudado para VLC como padrão pois é mais robusto para IPTV
+  PlayerStrategy _currentStrategy = PlayerStrategy.vlc; 
   int _retryCount = 0;
   static const int _maxRetries = 3;
   
@@ -424,7 +425,9 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> with WidgetsBindi
       
       // URL final é a própria URL original (Video On Demand)
       debugPrint('Usando link direto (VOD): $url');
-      // url = await _resolveRedirects(url); // Removido a pedido do usuário
+      // Re-ativado para resolver redirecionamentos (bit.ly, load balancers, etc)
+      url = await _resolveRedirects(url); 
+      debugPrint('URL Final após resolve: $url');
       
       // Cria novo controller - tenta com e sem headers
       debugPrint('Criando VideoPlayerController para URL: $url');
