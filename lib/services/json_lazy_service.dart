@@ -681,7 +681,7 @@ class JsonLazyService {
     debugPrint('🧹 Cache JSON limpo');
   }
 
-  /// Limpa tudo
+  /// Limpa cache e índice JSON da memória
   void clearAll() {
     _categoryIndex = null;
     _categoryCache.clear();
@@ -689,7 +689,22 @@ class JsonLazyService {
     _totalMovies = 0;
     _totalSeries = 0;
     _totalAdult = 0;
-    debugPrint('🧹 Cache e índice JSON limpos');
+    debugPrint('🧹 Cache e índice JSON limpos da memória');
+  }
+
+  /// Limpa arquivos do cache local (disco)
+  Future<void> clearLocalFiles() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final cacheDir = Directory('${dir.path}/json_cache');
+      
+      if (await cacheDir.exists()) {
+        await cacheDir.delete(recursive: true);
+        debugPrint('🗑️ Diretório de cache apagado: ${cacheDir.path}');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Erro ao limpar arquivos de cache: $e');
+    }
   }
 
   /// Estatísticas de memória

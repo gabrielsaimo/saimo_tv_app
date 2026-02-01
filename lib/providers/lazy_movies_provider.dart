@@ -631,6 +631,46 @@ class LazyMoviesProvider with ChangeNotifier {
     }
   }
 
+  /// Força o recarregamento completo do catálogo (Limpa cache e recarrega)
+  Future<void> forceRefreshCatalog() async {
+    debugPrint('🔄 Forçando recarregamento do catálogo...');
+    _isLoadingIndex = true;
+    notifyListeners();
+    
+    try {
+      // 1. Limpa serviços
+      _service.clearAll(); // Memória
+      await _service.clearLocalFiles(); // Disco
+      
+      // 2. Reseta estado local
+      _categories = [];
+
+      _categoryContentTypes.clear();
+      _loadedMovies = [];
+      _loadedSeries = [];
+      _currentCategoryData = null;
+      _selectedCategoryId = null;
+      _selectedCategoryName = 'Todos';
+      _hasCachedTodos = false;
+      _cachedTodosMovies = [];
+      _cachedTodosSeries = [];
+      
+      // 3. Recarrega
+      await initialize();
+      
+      // 4. Seleciona categoria padrão
+      await selectCategory('Todos', forceReload: true);
+      
+      debugPrint('✅ Catálogo recarregado com sucesso!');
+    } catch (e) {
+      debugPrint('❌ Erro ao recarregar catálogo: $e');
+      _indexError = 'Erro ao recarregar: $e';
+    } finally {
+      _isLoadingIndex = false;
+      notifyListeners();
+    }
+  }
+
   // === Seleção de categoria ===
 
   /// Seleciona uma categoria pelo nome

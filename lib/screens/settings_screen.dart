@@ -233,14 +233,10 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     _showSnackBar('Atualizando catálogo...', Icons.refresh);
     
     try {
-      // Clear local catalog cache
-      final catalogService = JsonCatalogService();
-      await catalogService.clearLocalCache();
-      
-      // Reload movies provider
+      // Use the proper provider method that handles everything (memory + disk + state)
       if (mounted) {
         final moviesProvider = context.read<LazyMoviesProvider>();
-        await moviesProvider.initialize(); // Force reload
+        await moviesProvider.forceRefreshCatalog();
         
         _showSnackBar('Catálogo atualizado!', Icons.check_circle);
       }

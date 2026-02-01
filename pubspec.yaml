@@ -1,7 +1,7 @@
 name: saimo_tv
 description: "SAIMO TV - App de IPTV para Android TV"
 publish_to: 'none'
-version: 13.2.0+140
+version: 13.3.0+141
 
 environment:
   sdk: ^3.5.0
